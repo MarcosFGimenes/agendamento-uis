@@ -7,6 +7,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import { useRouter } from 'next/navigation';
 import Comprovante from '../confirmacao/comprovante';
+import { FiCalendar, FiClock, FiUser, FiHash, FiPhone, FiMapPin, FiEdit, FiX, FiCheck, FiPlus, FiTruck, FiArrowRight, FiArrowLeft } from 'react-icons/fi';
 
 type AgendamentoDados = {
   saida: string;
@@ -17,11 +18,22 @@ type AgendamentoDados = {
   telefone: string;
   destino: string;
   observacoes: string;
+  codigo?: string;
+};
+
+type Motorista = {
+  id: string;
+  nome: string;
+  matricula: string;
+  setor: string;
+  cargo: string;
+  telefone: string;
 };
 
 export default function AgendarPage() {
   const router = useRouter();
   const [veiculos, setVeiculos] = useState<any[]>([]);
+  const [motoristas, setMotoristas] = useState<Motorista[]>([]);
   const [dados, setDados] = useState<AgendamentoDados>({
     saida: '',
     chegada: '',
@@ -33,24 +45,55 @@ export default function AgendarPage() {
     observacoes: '',
   });
   const [erro, setErro] = useState<string>('');
+  const [erroMatricula, setErroMatricula] = useState<string>('');
   const [carregando, setCarregando] = useState<boolean>(false);
   const [mostrarDisponiveis, setMostrarDisponiveis] = useState<boolean>(true);
   const [datasMaximas, setDatasMaximas] = useState<{ [key: string]: string }>({});
   const [mostrarComprovante, setMostrarComprovante] = useState<boolean>(false);
   const [dadosComprovante, setDadosComprovante] = useState<any>(null);
+  const [mostrarAgendamentos, setMostrarAgendamentos] = useState<boolean>(false);
+  const [dataSelecionada, setDataSelecionada] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [agendamentosDia, setAgendamentosDia] = useState<any[]>([]);
+  const [etapaAtual, setEtapaAtual] = useState<'veiculo' | 'detalhes'>('veiculo');
+
+  // Estados para data e hora separadas
+  const [saidaData, setSaidaData] = useState<string>('');
+  const [saidaHora, setSaidaHora] = useState<string>('');
+  const [chegadaData, setChegadaData] = useState<string>('');
+  const [chegadaHora, setChegadaHora] = useState<string>('');
+
+  useEffect(() => {
+    const carregarMotoristas = async () => {
+      try {
+        const colMotoristas = collection(db, 'motoristas');
+        const snapshot = await getDocs(colMotoristas);
+        const lista = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        } as Motorista));
+        setMotoristas(lista);
+      } catch (error) {
+        console.error('Erro ao carregar motoristas:', error);
+      }
+    };
+    carregarMotoristas();
+  }, []);
 
   useEffect(() => {
     const carregarVeiculos = async () => {
-      if (!dados.saida) {
+      if (!saidaData || !saidaHora) {
         setVeiculos([]);
         setDados((prev) => ({ ...prev, veiculoId: '' }));
         return;
       }
 
+      const saidaCompleta = `${saidaData}T${saidaHora}`;
+      setDados((prev) => ({ ...prev, saida: saidaCompleta }));
+
       setCarregando(true);
       try {
-        const lista = await listarVeiculosComStatus(dados.saida);
-        setVeiculos(lista); // Carrega todos os veículos, disponíveis ou não
+        const lista = await listarVeiculosComStatus(saidaCompleta);
+        setVeiculos(lista);
       } catch (error) {
         setErro('Erro ao carregar veículos. Tente novamente.');
         console.error('Erro ao carregar veículos:', error);
@@ -59,7 +102,17 @@ export default function AgendarPage() {
       }
     };
     carregarVeiculos();
-  }, [dados.saida]);
+  }, [saidaData, saidaHora]);
+
+  // Novo useEffect para atualizar dados.chegada
+  useEffect(() => {
+    if (chegadaData && chegadaHora) {
+      const chegadaCompleta = `${chegadaData}T${chegadaHora}`;
+      setDados((prev) => ({ ...prev, chegada: chegadaCompleta }));
+    } else {
+      setDados((prev) => ({ ...prev, chegada: '' }));
+    }
+  }, [chegadaData, chegadaHora]);
 
   useEffect(() => {
     const carregarDatasMaximas = async () => {
@@ -100,6 +153,66 @@ export default function AgendarPage() {
     }
   }, [veiculos, dados.saida]);
 
+  useEffect(() => {
+    const carregarAgendamentosComPlacas = async () => {
+      try {
+        const colVeiculos = collection(db, 'veiculos');
+        const veiculosSnap = await getDocs(colVeiculos);
+        const veiculosMap = veiculosSnap.docs.reduce((map, doc) => {
+          const data = doc.data();
+          map[doc.id] = data.placa;
+          return map;
+        }, {} as Record<string, string>);
+
+        const colAgendamentos = collection(db, 'agendamentos');
+        const snapshot = await getDocs(colAgendamentos);
+        const agendamentos = snapshot.docs
+          .map((doc) => ({
+            id: doc.id,
+            ...(doc.data() as { veiculoId: string; saida: string; chegada: string; destino: string }),
+          }))
+          .filter(
+            (ag) =>
+              new Date(ag.saida).toISOString().slice(0, 10) === dataSelecionada
+          )
+          .map((ag) => ({
+            ...ag,
+            placa: veiculosMap[ag.veiculoId] || 'Placa não encontrada',
+          }))
+          .sort((a, b) => new Date(a.saida).getTime() - new Date(b.saida).getTime());
+
+        setAgendamentosDia(agendamentos);
+      } catch (error) {
+        console.error('Erro ao carregar agendamentos com placas:', error);
+      }
+    };
+
+    if (mostrarAgendamentos) {
+      carregarAgendamentosComPlacas();
+    }
+  }, [mostrarAgendamentos, dataSelecionada]);
+
+  const handleMatriculaChange = (matricula: string) => {
+    setDados((prev) => ({ ...prev, matricula }));
+    setErro('');
+    setErroMatricula('');
+
+    const motoristaEncontrado = motoristas.find((m) => m.matricula === matricula);
+
+    if (motoristaEncontrado) {
+      setDados((prev) => ({
+        ...prev,
+        motorista: motoristaEncontrado.nome,
+        telefone: motoristaEncontrado.telefone || prev.telefone,
+      }));
+    } else {
+      setDados((prev) => ({ ...prev, motorista: '', telefone: '' }));
+      if (matricula) {
+        setErroMatricula('Matrícula não autorizada para dirigir.');
+      }
+    }
+  };
+
   const formatarTelefone = (valor: string) => {
     const apenasNumeros = valor.replace(/\D/g, '');
     if (apenasNumeros.length <= 2) return apenasNumeros;
@@ -111,8 +224,10 @@ export default function AgendarPage() {
 
   const validarAgendamento = async () => {
     const camposObrigatorios = [
-      { nome: 'Data e Hora de Saída', valor: dados.saida },
-      { nome: 'Data e Hora de Chegada', valor: dados.chegada },
+      { nome: 'Data de Saída', valor: saidaData },
+      { nome: 'Hora de Saída', valor: saidaHora },
+      { nome: 'Data de Chegada', valor: chegadaData },
+      { nome: 'Hora de Chegada', valor: chegadaHora },
       { nome: 'Veículo', valor: dados.veiculoId },
       { nome: 'Motorista', valor: dados.motorista },
       { nome: 'Matrícula', valor: dados.matricula },
@@ -129,18 +244,23 @@ export default function AgendarPage() {
     }
 
     const agora = new Date();
-    const saida = new Date(dados.saida);
-    const chegada = new Date(dados.chegada);
+    const saida = new Date(`${saidaData}T${saidaHora}`);
+    const chegada = new Date(`${chegadaData}T${chegadaHora}`);
     if (saida < agora) {
-      return 'A data de saída não pode ser anterior à data atual.';
+      return 'A data e hora de saída não podem ser anteriores ao momento atual.';
     }
     if (chegada <= saida) {
-      return 'A data de chegada deve ser posterior à data de saída.';
+      return 'A data e hora de chegada devem ser posteriores à data e hora de saída.';
     }
 
     const telefoneLimpo = dados.telefone.replace(/\D/g, '');
     if (telefoneLimpo.length < 10 || telefoneLimpo.length > 11) {
       return 'O número de telefone deve ter 10 ou 11 dígitos.';
+    }
+
+    const motoristaEncontrado = motoristas.find((m) => m.matricula === dados.matricula);
+    if (!motoristaEncontrado) {
+      return 'Matrícula não autorizada. Verifique ou cadastre o motorista.';
     }
 
     const colAgendamentos = collection(db, 'agendamentos');
@@ -181,6 +301,15 @@ export default function AgendarPage() {
     setErro('');
     setCarregando(true);
     try {
+      // Garantir que saida e chegada estão atualizados
+      const saidaCompleta = `${saidaData}T${saidaHora}`;
+      const chegadaCompleta = `${chegadaData}T${chegadaHora}`;
+      setDados((prev) => ({
+        ...prev,
+        saida: saidaCompleta,
+        chegada: chegadaCompleta,
+      }));
+
       const mensagemErro = await validarAgendamento();
       if (mensagemErro) {
         setErro(mensagemErro);
@@ -188,7 +317,19 @@ export default function AgendarPage() {
         return;
       }
 
-      await criarAgendamento(dados);
+      // Gerar código aleatório de 5 dígitos
+      const codigo = Math.floor(10000 + Math.random() * 90000).toString();
+
+      // Usar os valores atualizados para criar o agendamento
+      const agendamentoDados = {
+        ...dados,
+        saida: saidaCompleta,
+        chegada: chegadaCompleta,
+        codigo, // Adiciona o código
+      };
+      await criarAgendamento(agendamentoDados);
+
+      // Atualizar dadosComprovante com valores válidos e o código
       setDadosComprovante({
         motorista: dados.motorista,
         matricula: dados.matricula,
@@ -197,9 +338,11 @@ export default function AgendarPage() {
         observacoes: dados.observacoes,
         veiculo: veiculos.find((v) => v.id === dados.veiculoId)?.modelo || 'Desconhecido',
         placa: veiculos.find((v) => v.id === dados.veiculoId)?.placa || 'Não informada',
-        saida: dados.saida,
-        chegada: dados.chegada,
+        saida: saidaCompleta,
+        chegada: chegadaCompleta,
+        codigo, // Adiciona o código aqui também
       });
+
       setMostrarComprovante(true);
       setDados({
         saida: '',
@@ -211,6 +354,10 @@ export default function AgendarPage() {
         destino: '',
         observacoes: '',
       });
+      setSaidaData('');
+      setSaidaHora('');
+      setChegadaData('');
+      setChegadaHora('');
     } catch (error) {
       setErro('Erro ao criar agendamento. Tente novamente.');
       console.error('Erro ao criar agendamento:', error);
@@ -224,195 +371,404 @@ export default function AgendarPage() {
     : veiculos;
 
   const getMinDate = () => {
-    if (typeof window === 'undefined') return '';
-    return new Date().toISOString().slice(0, 16);
+    return new Date().toISOString().slice(0, 10);
+  };
+
+  const getMinTime = () => {
+    const agora = new Date();
+    return `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
   };
 
   return (
     <>
-      <main className="min-h-screen bg-green-50 p-4 sm:p-6">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-2xl sm:text-3xl font-semibold text-green-800 mb-6 sm:mb-8">
-            Solicitação de Agendamento
-          </h1>
-
-          {erro && (
-            <div className="bg-red-100 text-red-700 p-3 rounded-lg mb-6 text-sm flex justify-between items-center">
-              {erro}
+      <main className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
+        <div className="max-w-5xl mx-auto">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">Agendamento de Veículo</h1>
+            <p className="text-gray-600 mb-6">Preencha os dados para solicitar um veículo</p>
+            
+            {/* Navegação por etapas */}
+            <div className="flex mb-8">
               <button
-                onClick={() => setErro('')}
-                className="text-red-700 hover:text-red-900"
+                onClick={() => setEtapaAtual('veiculo')}
+                className={`flex-1 py-2 font-medium border-b-2 ${etapaAtual === 'veiculo' ? 'border-green-600 text-green-600' : 'border-gray-200 text-gray-500'}`}
               >
-                ✕
+                <div className="flex items-center justify-center gap-2">
+                  <FiTruck className="text-lg" />
+                  Veículo
+                </div>
+              </button>
+              <button
+                onClick={() => dados.veiculoId && setEtapaAtual('detalhes')}
+                className={`flex-1 py-2 font-medium border-b-2 ${etapaAtual === 'detalhes' ? 'border-green-600 text-green-600' : 'border-gray-200 text-gray-500'} ${!dados.veiculoId ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <FiUser className="text-lg" />
+                  Detalhes
+                </div>
               </button>
             </div>
-          )}
 
-          <div className="mb-6">
-            <h2 className="text-lg font-medium text-green-700 mb-3">Seleção de Veículo</h2>
-            <div className="flex items-center mb-4">
-              <label className="mr-3 text-sm font-medium text-green-700">
-                Mostrar apenas disponíveis
-              </label>
-              <input
-                type="checkbox"
-                checked={mostrarDisponiveis}
-                onChange={() => setMostrarDisponiveis(!mostrarDisponiveis)}
-                className="h-4 w-4 text-green-600 focus:ring-green-500 border-green-300 rounded"
-              />
-            </div>
-            {carregando ? (
-              <div className="flex justify-center items-center py-4">
-                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-green-600"></div>
+            {erro && (
+              <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded mb-6">
+                <div className="flex justify-between items-center">
+                  <p className="font-bold">Erro</p>
+                  <button onClick={() => setErro('')} className="text-red-700 hover:text-red-900">
+                    <FiX />
+                  </button>
+                </div>
+                <p>{erro}</p>
               </div>
-            ) : veiculosFiltrados.length === 0 ? (
-              <p className="text-green-600 text-sm">
-                {mostrarDisponiveis
-                  ? 'Nenhum veículo disponível para a data selecionada.'
-                  : 'Nenhum veículo encontrado.'}
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {veiculosFiltrados.map((v) => (
-                  <div
-                    key={v.id}
-                    onClick={() => v.status.disponivel && setDados({ ...dados, veiculoId: v.id })}
-                    className={`p-4 rounded-lg shadow-md cursor-pointer transition-all duration-200 ${
-                      v.status.disponivel
-                        ? dados.veiculoId === v.id
-                          ? 'bg-green-200 border-green-400'
-                          : 'bg-white border-green-200 hover:bg-green-100'
-                        : 'bg-gray-100 border-gray-200 cursor-not-allowed'
-                    } border`}
-                  >
-                    <p className="font-semibold text-green-900 text-sm sm:text-base">{v.modelo}</p>
-                    <p className="text-xs sm:text-sm text-green-600">{v.placa}</p>
-                    <p className="text-xs text-green-500 mt-1">
-                      {v.status.disponivel
-                        ? `Disponível até: ${datasMaximas[v.id] || 'Carregando...'}`
-                        : `Indisponível até: ${v.status.indisponivelAte ? new Date(v.status.indisponivelAte).toLocaleString('pt-BR') : 'Carregando...'}`}
+            )}
+
+            {etapaAtual === 'veiculo' ? (
+              <div>
+                <h2 className="text-xl font-semibold text-gray-800 mb-4">Selecione o Veículo</h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Data de Saída *</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <FiCalendar className="text-gray-400" />
+                      </div>
+                      <input
+                        type="date"
+                        value={saidaData}
+                        onChange={(e) => setSaidaData(e.target.value)}
+                        min={getMinDate()}
+                        className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-black"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Hora de Saída *</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <FiClock className="text-gray-400" />
+                      </div>
+                      <input
+                        type="time"
+                        value={saidaHora}
+                        onChange={(e) => setSaidaHora(e.target.value)}
+                        min={saidaData === getMinDate() ? getMinTime() : undefined}
+                        step="60"
+                        className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-black"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Data de Chegada *</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <FiCalendar className="text-gray-400" />
+                      </div>
+                      <input
+                        type="date"
+                        value={chegadaData}
+                        onChange={(e) => setChegadaData(e.target.value)}
+                        min={saidaData || getMinDate()}
+                        className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-black"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Hora de Chegada *</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <FiClock className="text-gray-400" />
+                      </div>
+                      <input
+                        type="time"
+                        value={chegadaHora}
+                        onChange={(e) => setChegadaHora(e.target.value)}
+                        min={chegadaData === saidaData ? saidaHora : undefined}
+                        step="60"
+                        className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-black"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center mb-6">
+                  <input
+                    type="checkbox"
+                    checked={mostrarDisponiveis}
+                    onChange={() => setMostrarDisponiveis(!mostrarDisponiveis)}
+                    className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                  />
+                  <label className="ml-2 text-sm font-medium text-gray-700">
+                    Mostrar apenas veículos disponíveis
+                  </label>
+                </div>
+
+                {carregando ? (
+                  <div className="flex justify-center items-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
+                  </div>
+                ) : veiculosFiltrados.length === 0 ? (
+                  <div className="text-center py-8 bg-gray-50 rounded-lg">
+                    <FiTruck className="mx-auto h-12 w-12 text-gray-400" />
+                    <h3 className="mt-2 text-lg font-medium text-gray-900">
+                      {mostrarDisponiveis ? 'Nenhum veículo disponível' : 'Nenhum veículo encontrado'}
+                    </h3>
+                    <p className="mt-1 text-gray-500">
+                      {mostrarDisponiveis 
+                        ? 'Não há veículos disponíveis para a data selecionada.'
+                        : 'Não há veículos cadastrados no sistema.'}
                     </p>
                   </div>
-                ))}
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {veiculosFiltrados.map((v) => (
+                      <div
+                        key={v.id}
+                        onClick={() => v.status.disponivel && setDados({ ...dados, veiculoId: v.id })}
+                        className={`p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer ${
+                          v.status.disponivel
+                            ? dados.veiculoId === v.id
+                              ? 'border-green-500 bg-green-50'
+                              : 'border-gray-200 hover:border-green-300 hover:bg-green-50'
+                            : 'border-gray-200 bg-gray-100 cursor-not-allowed'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h3 className="font-bold text-gray-900">{v.modelo}</h3>
+                            <p className="text-sm text-gray-600">{v.placa}</p>
+                          </div>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            v.status.disponivel ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}>
+                            {v.status.disponivel ? 'Disponível' : 'Indisponível'}
+                          </span>
+                        </div>
+                        <div className="mt-3 text-xs text-gray-500">
+                          {v.status.disponivel
+                            ? datasMaximas[v.id] === 'Disponível sem restrições'
+                              ? 'Disponível sem restrições'
+                              : `Disponível até: ${datasMaximas[v.id] || 'Carregando...'}`
+                            : `Indisponível até: ${v.status.indisponivelAte ? new Date(v.status.indisponivelAte).toLocaleString('pt-BR') : 'Carregando...'}`}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {dados.veiculoId && (
+                  <div className="mt-6 flex justify-end">
+                    <button
+                      onClick={() => setEtapaAtual('detalhes')}
+                      className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+                    >
+                      Próximo
+                      <FiArrowRight className="text-lg" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div>
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-semibold text-gray-800">Detalhes do Agendamento</h2>
+                  <button
+                    onClick={() => setEtapaAtual('veiculo')}
+                    className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"
+                  >
+                    <FiArrowLeft className="text-sm" />
+                    Voltar
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                    <h3 className="font-medium text-gray-900 mb-2">Veículo Selecionado</h3>
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-gray-900">
+                          {veiculos.find(v => v.id === dados.veiculoId)?.modelo || 'Não selecionado'}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {veiculos.find(v => v.id === dados.veiculoId)?.placa || '---'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setEtapaAtual('veiculo')}
+                        className="text-green-600 hover:text-green-800 text-sm flex items-center gap-1"
+                      >
+                        <FiEdit className="text-sm" />
+                        Alterar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Matrícula *</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <FiHash className="text-gray-400" />
+                        </div>
+                        <input
+                          type="text"
+                          value={dados.matricula}
+                          onChange={(e) => handleMatriculaChange(e.target.value)}
+                          className={`w-full pl-10 p-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 ${
+                            erroMatricula ? 'border-red-300' : 'border-gray-300'
+                          } text-black`}
+                          placeholder="Digite sua matrícula"
+                          required
+                        />
+                      </div>
+                      {erroMatricula && (
+                        <p className="mt-1 text-xs text-red-600 font-medium">
+                          {erroMatricula}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Motorista *</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <FiUser className="text-gray-400" />
+                        </div>
+                        <input
+                          type="text"
+                          value={dados.motorista}
+                          readOnly
+                          className="w-full pl-10 p-3 border border-gray-300 rounded-lg bg-gray-50 text-black"
+                          placeholder="Preenchido automaticamente"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Telefone *</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <FiPhone className="text-gray-400" />
+                        </div>
+                        <input
+                          type="tel"
+                          value={dados.telefone}
+                          onChange={(e) => setDados({ ...dados, telefone: formatarTelefone(e.target.value) })}
+                          className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-black"
+                          placeholder="(XX) 9XXXX-XXXX"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Destino *</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <FiMapPin className="text-gray-400" />
+                        </div>
+                        <input
+                          type="text"
+                          value={dados.destino}
+                          onChange={(e) => setDados({ ...dados, destino: e.target.value })}
+                          className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-black"
+                          placeholder="Digite o destino"
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Observações</label>
+                    <textarea
+                      value={dados.observacoes}
+                      onChange={(e) => setDados({ ...dados, observacoes: e.target.value })}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-black"
+                      placeholder="Informações adicionais sobre o agendamento"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div className="flex justify-between pt-4">
+                    <button
+                      onClick={() => setEtapaAtual('veiculo')}
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      onClick={handleSubmit}
+                      disabled={carregando || !!erroMatricula}
+                      className={`bg-green-600 text-white px-6 py-2 rounded-lg font-medium transition-colors ${
+                        carregando || erroMatricula ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-700'
+                      }`}
+                    >
+                      {carregando ? 'Enviando...' : 'Confirmar Agendamento'}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
-
-          <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md border border-green-200 mb-20 sm:mb-8">
-            <h2 className="text-lg font-medium text-green-700 mb-4">Detalhes do Agendamento</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-green-700 mb-1">
-                  Data e Hora de Saída
-                </label>
-                <input
-                  type="datetime-local"
-                  value={dados.saida}
-                  onChange={(e) => setDados({ ...dados, saida: e.target.value })}
-                  min={getMinDate()}
-                  className="w-full p-2 border border-green-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm text-gray-900"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-green-700 mb-1">
-                  Data e Hora de Chegada
-                </label>
-                <input
-                  type="datetime-local"
-                  value={dados.chegada}
-                  onChange={(e) => setDados({ ...dados, chegada: e.target.value })}
-                  min={dados.saida || getMinDate()}
-                  className="w-full p-2 border border-green-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm text-gray-900"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-green-700 mb-1">
-                  Motorista
-                </label>
-                <input
-                  type="text"
-                  value={dados.motorista}
-                  onChange={(e) => setDados({ ...dados, motorista: e.target.value })}
-                  className="w-full p-2 border border-green-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm text-gray-900"
-                  placeholder="Nome do motorista"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-green-700 mb-1">
-                  Matrícula
-                </label>
-                <input
-                  type="text"
-                  value={dados.matricula}
-                  onChange={(e) => setDados({ ...dados, matricula: e.target.value })}
-                  className="w-full p-2 border border-green-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm text-gray-900"
-                  placeholder="Matrícula"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-green-700 mb-1">
-                  Telefone do motorista
-                </label>
-                <input
-                  type="tel"
-                  value={dados.telefone}
-                  onChange={(e) => setDados({ ...dados, telefone: formatarTelefone(e.target.value) })}
-                  className="w-full p-2 border border-green-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm text-gray-900"
-                  placeholder="(XX) 9XXXX-XXXX"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-green-700 mb-1">
-                  Destino
-                </label>
-                <input
-                  type="text"
-                  value={dados.destino}
-                  onChange={(e) => setDados({ ...dados, destino: e.target.value })}
-                  className="w-full p-2 border border-green-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm text-gray-900"
-                  placeholder="Destino"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-green-700 mb-1">
-                  Observações
-                </label>
-                <textarea
-                  value={dados.observacoes}
-                  onChange={(e) => setDados({ ...dados, observacoes: e.target.value })}
-                  className="w-full p-2 border border-green-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm text-gray-900"
-                  placeholder="Notas ou informações adicionais"
-                  rows={4}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-green-50 sm:static sm:p-0 sm:bg-transparent sm:flex sm:space-x-4">
-            <button
-              onClick={handleSubmit}
-              disabled={carregando}
-              className={`w-full sm:w-auto bg-green-600 text-white py-2 px-4 rounded-md transition-colors duration-200 text-sm sm:text-base ${
-                carregando ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-700'
-              }`}
-            >
-              {carregando ? 'Processando...' : 'Solicitar Agendamento'}
-            </button>
-            <button
-              onClick={() => router.push('/veiculos')}
-              className="w-full sm:w-auto bg-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-400 transition-colors duration-200 text-sm sm:text-base mt-2 sm:mt-0"
-            >
-              Cancelar
-            </button>
-          </div>
         </div>
       </main>
+
+      {/* Botão flutuante para ver agendamentos */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <button
+          onClick={() => setMostrarAgendamentos(!mostrarAgendamentos)}
+          className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-all flex items-center justify-center"
+        >
+          {mostrarAgendamentos ? <FiX size={20} /> : <FiCalendar size={20} />}
+        </button>
+
+        {mostrarAgendamentos && (
+          <div className="absolute bottom-16 right-0 w-80 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+            <div className="p-4 bg-gray-50 border-b border-gray-200">
+              <h3 className="font-medium text-gray-900">Agendamentos do Dia</h3>
+            </div>
+            <div className="p-4">
+              <input
+                type="date"
+                value={dataSelecionada}
+                onChange={(e) => setDataSelecionada(e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              {agendamentosDia.length === 0 ? (
+                <div className="text-center py-4 text-gray-500">
+                  Nenhum agendamento para esta data
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {agendamentosDia.map((agendamento) => (
+                    <div key={agendamento.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-medium text-gray-900">{agendamento.placa}</p>
+                          <p className="text-xs text-gray-600">
+                            {new Date(agendamento.saida).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} -{' '}
+                            {agendamento.chegada
+                              ? new Date(agendamento.chegada).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                              : 'Data inválida'}
+                          </p>
+                        </div>
+                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                          {agendamento.destino}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       {mostrarComprovante && dadosComprovante && (
         <Comprovante
           agendamento={dadosComprovante}
