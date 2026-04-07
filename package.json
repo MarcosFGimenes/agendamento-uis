@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:pdf": "node __tests__/pdf-export.test.js"
   },
   "dependencies": {
     "date-fns": "^4.1.0",

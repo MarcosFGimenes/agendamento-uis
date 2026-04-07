@@ -336,6 +336,61 @@ export async function elementToPdfBlob(element: HTMLElement, options?: ExportOpt
   // Clona o elemento para não modificar o original
   const clone = element.cloneNode(true) as HTMLElement;
   
+  // Remove todas as classes Tailwind que podem usar oklch
+  const removeClasses = (el: HTMLElement) => {
+    const allElements = el.querySelectorAll('*');
+    allElements.forEach((elem) => {
+      if (elem instanceof HTMLElement) {
+        elem.removeAttribute('class');
+      }
+    });
+    clone.removeAttribute('class');
+  };
+  
+  removeClasses(clone);
+  
+  // Aplica estilos inline básicos para exibição
+  const applyBasicStyles = (el: HTMLElement) => {
+    const allElements = el.querySelectorAll('*');
+    allElements.forEach((elem) => {
+      if (elem instanceof HTMLElement) {
+        const computed = window.getComputedStyle(elem);
+        const styles: { [key: string]: string } = {
+          'font-size': computed.fontSize,
+          'font-weight': computed.fontWeight,
+          'font-family': 'Arial, sans-serif',
+          'color': '#000000',
+          'background-color': computed.backgroundColor || 'transparent',
+          'padding': computed.padding,
+          'margin': computed.margin,
+          'border': computed.border,
+          'border-radius': computed.borderRadius,
+          'display': computed.display,
+          'flex-direction': computed.flexDirection,
+          'justify-content': computed.justifyContent,
+          'align-items': computed.alignItems,
+          'gap': computed.gap,
+          'line-height': computed.lineHeight,
+          'text-align': computed.textAlign,
+          'white-space': computed.whiteSpace,
+          'width': computed.width,
+          'height': computed.height,
+          'max-width': computed.maxWidth,
+          'min-width': computed.minWidth,
+          'opacity': computed.opacity,
+        };
+        
+        Object.entries(styles).forEach(([key, value]) => {
+          if (value && value !== 'auto' && value !== 'normal') {
+            elem.style.setProperty(key, value);
+          }
+        });
+      }
+    });
+  };
+  
+  applyBasicStyles(clone);
+  
   // Cria um container temporário no DOM para renderizar com estilos
   const tempContainer = document.createElement('div');
   tempContainer.style.position = 'absolute';
