@@ -335,7 +335,7 @@ export async function elementToPng(element: HTMLElement, options?: ExportOptions
 export async function elementToPdfBlob(element: HTMLElement, options?: ExportOptions) {
   // Clona o elemento para não modificar o original
   const clone = element.cloneNode(true) as HTMLElement;
-  
+
   // Remove todas as classes Tailwind que podem usar oklch
   const removeClasses = (el: HTMLElement) => {
     const allElements = el.querySelectorAll('*');
@@ -346,51 +346,64 @@ export async function elementToPdfBlob(element: HTMLElement, options?: ExportOpt
     });
     clone.removeAttribute('class');
   };
-  
+
   removeClasses(clone);
-  
-  // Aplica estilos inline básicos para exibição
+
+  // Aplica estilos inline básicos para exibição garantindo visibilidade
   const applyBasicStyles = (el: HTMLElement) => {
     const allElements = el.querySelectorAll('*');
     allElements.forEach((elem) => {
       if (elem instanceof HTMLElement) {
-        const computed = window.getComputedStyle(elem);
-        const styles: { [key: string]: string } = {
-          'font-size': computed.fontSize,
-          'font-weight': computed.fontWeight,
-          'font-family': 'Arial, sans-serif',
-          'color': '#000000',
-          'background-color': computed.backgroundColor || 'transparent',
-          'padding': computed.padding,
-          'margin': computed.margin,
-          'border': computed.border,
-          'border-radius': computed.borderRadius,
-          'display': computed.display,
-          'flex-direction': computed.flexDirection,
-          'justify-content': computed.justifyContent,
-          'align-items': computed.alignItems,
-          'gap': computed.gap,
-          'line-height': computed.lineHeight,
-          'text-align': computed.textAlign,
-          'white-space': computed.whiteSpace,
-          'width': computed.width,
-          'height': computed.height,
-          'max-width': computed.maxWidth,
-          'min-width': computed.minWidth,
-          'opacity': computed.opacity,
-        };
-        
-        Object.entries(styles).forEach(([key, value]) => {
-          if (value && value !== 'auto' && value !== 'normal') {
-            elem.style.setProperty(key, value);
-          }
-        });
+        // Estilos básicos garantidos para visibilidade
+        elem.style.setProperty('color', '#000000', 'important');
+        elem.style.setProperty('background-color', 'transparent', 'important');
+        elem.style.setProperty('font-family', 'Arial, sans-serif', 'important');
+        elem.style.setProperty('font-size', '14px', 'important');
+        elem.style.setProperty('line-height', '1.4', 'important');
+        elem.style.setProperty('visibility', 'visible', 'important');
+        elem.style.setProperty('opacity', '1', 'important');
+
+        // Estilos específicos por tipo de elemento
+        if (elem.tagName === 'H1' || elem.tagName === 'H2' || elem.tagName === 'H3') {
+          elem.style.setProperty('font-weight', 'bold', 'important');
+          elem.style.setProperty('margin', '8px 0', 'important');
+        }
+
+        if (elem.tagName === 'P') {
+          elem.style.setProperty('margin', '4px 0', 'important');
+        }
+
+        if (elem.tagName === 'DIV') {
+          elem.style.setProperty('margin', '4px 0', 'important');
+          elem.style.setProperty('padding', '4px 0', 'important');
+        }
+
+        if (elem.tagName === 'SPAN') {
+          elem.style.setProperty('display', 'inline', 'important');
+        }
+
+        // Remove qualquer estilo que possa causar problemas
+        elem.style.removeProperty('box-shadow');
+        elem.style.removeProperty('transform');
+        elem.style.removeProperty('filter');
       }
     });
+
+    // Estilos específicos para o container principal
+    clone.style.setProperty('background-color', '#ffffff', 'important');
+    clone.style.setProperty('color', '#000000', 'important');
+    clone.style.setProperty('padding', '20px', 'important');
+    clone.style.setProperty('font-family', 'Arial, sans-serif', 'important');
+    clone.style.setProperty('font-size', '14px', 'important');
+    clone.style.setProperty('line-height', '1.4', 'important');
+    clone.style.setProperty('width', 'auto', 'important');
+    clone.style.setProperty('height', 'auto', 'important');
+    clone.style.setProperty('visibility', 'visible', 'important');
+    clone.style.setProperty('opacity', '1', 'important');
   };
-  
+
   applyBasicStyles(clone);
-  
+
   // Cria um container temporário no DOM para renderizar com estilos
   const tempContainer = document.createElement('div');
   tempContainer.style.position = 'absolute';
@@ -399,20 +412,85 @@ export async function elementToPdfBlob(element: HTMLElement, options?: ExportOpt
   tempContainer.style.visibility = 'hidden';
   tempContainer.style.width = 'auto';
   tempContainer.style.height = 'auto';
+  tempContainer.style.backgroundColor = '#ffffff';
+  tempContainer.style.padding = '0';
+  tempContainer.style.margin = '0';
   tempContainer.appendChild(clone);
   document.body.appendChild(tempContainer);
 
   try {
-    // Aguarda um frame para garantir que o elemento está renderizado
-    await new Promise(resolve => requestAnimationFrame(resolve));
+    // Aguarda múltiplos frames para garantir que o elemento está completamente renderizado
+    await new Promise(resolve => {
+      let frames = 0;
+      const waitForFrames = () => {
+        frames++;
+        if (frames < 3) {
+          requestAnimationFrame(waitForFrames);
+        } else {
+          resolve(void 0);
+        }
+      };
+      requestAnimationFrame(waitForFrames);
+    });
+
+    // Pequeno delay adicional para garantir renderização completa
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     const canvas = await html2canvas(clone, {
-      backgroundColor: options?.backgroundColor ?? '#ffffff',
-      scale: options?.scale ?? Math.max(2, window.devicePixelRatio || 1),
+      backgroundColor: '#ffffff',
+      scale: options?.scale ?? 2,
       useCORS: true,
       allowTaint: true,
       logging: false,
+      width: clone.offsetWidth || 400,
+      height: clone.offsetHeight || 600,
+      imageTimeout: 0,
+      removeContainer: false,
     });
+
+    // Verifica se o canvas tem conteúdo
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Não foi possível obter contexto 2D do canvas');
+    }
+
+    // Verifica se há pixels não-brancos no canvas
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const hasContent = imageData.data.some((value, index) => {
+      // Pula pixels alpha (transparência)
+      if ((index + 1) % 4 === 0) return false;
+      // Verifica se há pixels que não são branco
+      return value < 250; // Permite pequena variação
+    });
+
+    if (!hasContent) {
+      console.warn('Canvas parece estar vazio, tentando novamente com configurações diferentes');
+      // Tenta novamente com configurações diferentes
+      const retryCanvas = await html2canvas(clone, {
+        backgroundColor: '#ffffff',
+        scale: 1,
+        useCORS: false,
+        allowTaint: true,
+        logging: true,
+        width: clone.offsetWidth || 400,
+        height: clone.offsetHeight || 600,
+      });
+
+      const retryCtx = retryCanvas.getContext('2d');
+      if (retryCtx) {
+        const retryImageData = retryCtx.getImageData(0, 0, retryCanvas.width, retryCanvas.height);
+        const retryHasContent = retryImageData.data.some((value, index) => {
+          if ((index + 1) % 4 === 0) return false;
+          return value < 250;
+        });
+
+        if (retryHasContent) {
+          canvas.width = retryCanvas.width;
+          canvas.height = retryCanvas.height;
+          ctx.drawImage(retryCanvas, 0, 0);
+        }
+      }
+    }
 
     const imgData = canvas.toDataURL('image/png');
     const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: canvas.width > canvas.height ? 'landscape' : 'portrait' });
@@ -442,7 +520,9 @@ export async function elementToPdfBlob(element: HTMLElement, options?: ExportOpt
     throw error;
   } finally {
     // Remove o container temporário do DOM
-    document.body.removeChild(tempContainer);
+    if (document.body.contains(tempContainer)) {
+      document.body.removeChild(tempContainer);
+    }
   }
 }
 
