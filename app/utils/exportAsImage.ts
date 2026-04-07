@@ -6,9 +6,44 @@ type ExportOptions = { backgroundColor?: string; pixelRatio?: number; scale?: nu
 const isSvgElement = (element: Element): element is SVGElement =>
   element.namespaceURI === 'http://www.w3.org/2000/svg' && !(element instanceof SVGForeignObjectElement);
 
+const sanitizeColorValue = (value: string) => {
+  // Converte cores oklch/rgb com espaços para versões suportadas por html2canvas
+  if (!value) return value;
+  
+  // Converte "rgb(x y z)" para "rgb(x, y, z)" 
+  if (value.startsWith('rgb(') && !value.includes(',')) {
+    value = value.replace(/rgb\(([^)]+)\)/, (match, values) => {
+      const parts = values.trim().split(/\s+/);
+      return `rgb(${parts.join(', ')})`;
+    });
+  }
+  
+  // Remove ou converte oklch - mapeia para grayscale ou cor aproximada
+  if (value.includes('oklch')) {
+    // Extrai valores oklch e aproxima para RGB
+    const oklchMatch = value.match(/oklch\(\s*([\d.]+)%?\s+([\d.]+)\s+([\d.]+)(?:deg)?\s*\)/);
+    if (oklchMatch) {
+      // L (lightness), C (chroma), H (hue)
+      const l = parseFloat(oklchMatch[1]);
+      const h = parseFloat(oklchMatch[3]);
+      
+      // Aproximação simples: converte para RGB baseado na luminosidade
+      const gray = Math.round((l * 255) / 100);
+      return `rgb(${gray}, ${gray}, ${gray})`;
+    }
+  }
+  
+  return value;
+};
+
 const sanitizeStyleValue = (property: string, value: string) => {
   if (!value) {
     return value;
+  }
+
+  // Sanitiza cores problemáticas
+  if (property.includes('color') || property.includes('background')) {
+    value = sanitizeColorValue(value);
   }
 
   // Remove referências a URLs externas (exceto data URLs)
@@ -298,36 +333,62 @@ export async function elementToPng(element: HTMLElement, options?: ExportOptions
 }
 
 export async function elementToPdfBlob(element: HTMLElement, options?: ExportOptions) {
-  const canvas = await html2canvas(element, {
-    backgroundColor: options?.backgroundColor ?? '#ffffff',
-    scale: options?.scale ?? Math.max(2, window.devicePixelRatio || 1),
-    useCORS: true,
-    allowTaint: false,
-    logging: false,
-  });
+  // Clona o elemento para não modificar o original
+  const clone = element.cloneNode(true) as HTMLElement;
+  
+  // Cria um container temporário no DOM para renderizar com estilos
+  const tempContainer = document.createElement('div');
+  tempContainer.style.position = 'absolute';
+  tempContainer.style.left = '-9999px';
+  tempContainer.style.top = '-9999px';
+  tempContainer.style.visibility = 'hidden';
+  tempContainer.style.width = 'auto';
+  tempContainer.style.height = 'auto';
+  tempContainer.appendChild(clone);
+  document.body.appendChild(tempContainer);
 
-  const imgData = canvas.toDataURL('image/png');
-  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: canvas.width > canvas.height ? 'landscape' : 'portrait' });
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const imageProps = pdf.getImageProperties(imgData);
-  const imageWidth = pageWidth;
-  const imageHeight = (imageProps.height * pageWidth) / imageProps.width;
+  try {
+    // Aguarda um frame para garantir que o elemento está renderizado
+    await new Promise(resolve => requestAnimationFrame(resolve));
 
-  if (imageHeight <= pageHeight) {
-    pdf.addImage(imgData, 'PNG', 0, 0, imageWidth, imageHeight);
-  } else {
-    const pageCount = Math.ceil(imageHeight / pageHeight);
-    for (let page = 0; page < pageCount; page += 1) {
-      const offsetY = -(page * pageHeight);
-      pdf.addImage(imgData, 'PNG', 0, offsetY, imageWidth, imageHeight, undefined, 'FAST');
-      if (page < pageCount - 1) {
-        pdf.addPage();
+    const canvas = await html2canvas(clone, {
+      backgroundColor: options?.backgroundColor ?? '#ffffff',
+      scale: options?.scale ?? Math.max(2, window.devicePixelRatio || 1),
+      useCORS: true,
+      allowTaint: true,
+      logging: false,
+    });
+
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: canvas.width > canvas.height ? 'landscape' : 'portrait' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imageProps = pdf.getImageProperties(imgData);
+    const imageWidth = pageWidth;
+    const imageHeight = (imageProps.height * pageWidth) / imageProps.width;
+
+    if (imageHeight <= pageHeight) {
+      pdf.addImage(imgData, 'PNG', 0, 0, imageWidth, imageHeight);
+    } else {
+      const pageCount = Math.ceil(imageHeight / pageHeight);
+      for (let page = 0; page < pageCount; page += 1) {
+        const offsetY = -(page * pageHeight);
+        pdf.addImage(imgData, 'PNG', 0, offsetY, imageWidth, imageHeight, undefined, 'FAST');
+        if (page < pageCount - 1) {
+          pdf.addPage();
+        }
       }
     }
-  }
 
-  return pdf.output('blob');
+    return pdf.output('blob');
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    console.error('Erro ao gerar PDF:', errorMessage);
+    throw error;
+  } finally {
+    // Remove o container temporário do DOM
+    document.body.removeChild(tempContainer);
+  }
 }
 
 export async function downloadElementAsPdf(element: HTMLElement, filename: string, options?: ExportOptions) {
