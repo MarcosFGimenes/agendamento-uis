@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
-import { FiCheckCircle, FiX, FiChevronDown, FiChevronUp, FiShare2, FiCopy, FiClock, FiCalendar, FiUser, FiPhone, FiMapPin, FiTruck, FiDownload } from 'react-icons/fi';
-import { downloadElementAsPdf, elementToPdfBlob } from '../utils/exportAsImage';
+import React, { useEffect, useState } from 'react';
+import { FiCheckCircle, FiX, FiChevronDown, FiChevronUp, FiCopy, FiClock, FiCalendar, FiUser, FiPhone, FiMapPin, FiTruck } from 'react-icons/fi';
 import { doc, getDoc } from 'firebase/firestore';
 import { getDb } from '../lib/firebase';
 
@@ -28,9 +27,7 @@ type ComprovanteProps = {
 export default function Comprovante({ agendamento, onClose }: ComprovanteProps) {
   const [mostrarInstrucoes, setMostrarInstrucoes] = useState<boolean>(false);
   const [copiado, setCopiado] = useState<boolean>(false);
-  const [salvandoPdf, setSalvandoPdf] = useState<boolean>(false);
   const [instrucoesDinamicas, setInstrucoesDinamicas] = useState<string>('');
-  const comprovanteRef = useRef<HTMLDivElement>(null);
   
 
   useEffect(() => {
@@ -135,38 +132,6 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
     }
   };
 
-  const handleCompartilhar = async () => {
-    if (!comprovanteRef.current) return;
-
-    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    const filename = `comprovante-${agendamento.codigo}-${timestamp}.pdf`;
-
-    try {
-      const pdfBlob = await elementToPdfBlob(comprovanteRef.current, { backgroundColor: '#ffffff', scale: 2 });
-      const file = new File([pdfBlob], filename, { type: 'application/pdf' });
-
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          title: 'Comprovante de Agendamento de Veículo',
-          files: [file],
-        });
-      } else {
-        alert('Seu navegador não suporta compartilhamento de arquivos PDF. O arquivo será baixado automaticamente.');
-        const objectUrl = URL.createObjectURL(pdfBlob);
-        const link = document.createElement('a');
-        link.href = objectUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        requestAnimationFrame(() => URL.revokeObjectURL(objectUrl));
-      }
-    } catch (err) {
-      console.error('Erro ao compartilhar PDF:', err);
-      alert('Falha ao compartilhar o comprovante em PDF. Tente novamente.');
-    }
-  };
-
   const handleCompartilharWhatsApp = () => {
     const texto = encodeURIComponent(generateComprovanteText());
     // Removido o número específico para abrir a lista de contatos/grupos
@@ -174,26 +139,9 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
     window.open(url, '_blank');
   };
 
-  const handleSalvarPdf = async () => {
-    if (!comprovanteRef.current) return;
-
-    setSalvandoPdf(true);
-    try {
-      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-      const filename = `comprovante-${agendamento.codigo}-${timestamp}.pdf`;
-      await downloadElementAsPdf(comprovanteRef.current, filename, { backgroundColor: '#ffffff', scale: 2 });
-      alert('PDF salvo com sucesso!');
-    } catch (error) {
-      console.error('Erro ao salvar PDF:', error);
-      alert('Erro ao salvar o comprovante em PDF. Tente novamente.');
-    } finally {
-      setSalvandoPdf(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 bg-black bg-opacity-30 backdrop-blur-sm flex items-center justify-center z-50 p-4 overscroll-contain">
-      <div ref={comprovanteRef} className="bg-white rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg max-h-[90vh] overflow-y-auto">
         {/* Cabeçalho */}
         <div className="bg-green-600 text-white p-4 flex justify-between items-center">
           <div className="flex items-center space-x-2">
@@ -350,15 +298,7 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
         </div>
 
         {/* Rodapé com ações */}
-        <div className="bg-gray-50 px-4 py-3 flex flex-col sm:flex-row justify-between sm:items-center gap-3 sm:gap-0 sm:px-6 rounded-b-xl">
-          <button
-            onClick={handleCompartilhar}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none w-full sm:w-auto"
-          >
-            <FiShare2 className="-ml-0.5 mr-2 h-4 w-4" />
-            Compartilhar
-          </button>
-          
+        <div className="bg-gray-50 px-4 py-3 flex flex-col sm:flex-row justify-end sm:items-center gap-3 sm:gap-0 sm:px-6 rounded-b-xl">
           <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3 w-full sm:w-auto">
             <button
               onClick={handleCopiar}
@@ -366,15 +306,6 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
             >
               <FiCopy className="-ml-0.5 mr-2 h-4 w-4" />
               {copiado ? 'Copiado!' : 'Copiar'}
-            </button>
-
-            <button
-              onClick={handleSalvarPdf}
-              disabled={salvandoPdf}
-              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
-            >
-              <FiDownload className="-ml-0.5 mr-2 h-4 w-4" />
-              {salvandoPdf ? 'Salvando...' : 'Salvar PDF'}
             </button>
             
             <button
