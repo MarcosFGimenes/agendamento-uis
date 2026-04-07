@@ -62,6 +62,7 @@ export default function GerenciarAgendamentosPage() {
   const [linhasExpandidas, setLinhasExpandidas] = useState<Set<string>>(() => new Set());
   const [selecionados, setSelecionados] = useState<Set<string>>(() => new Set());
   const checkboxTodosRef = useRef<HTMLInputElement | null>(null);
+  const matriculaDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const carregarDados = useCallback(async () => {
     try {
@@ -94,24 +95,43 @@ export default function GerenciarAgendamentosPage() {
 
   const handleMatriculaChange = (matricula: string) => {
     setDadosForm((prev) => ({ ...prev, matricula }));
-    setErro('');
 
-    const motoristaEncontrado = motoristas.find((m) => m.matricula === matricula);
+    // Limpar timeout anterior
+    if (matriculaDebounceRef.current) {
+      clearTimeout(matriculaDebounceRef.current);
+    }
 
-    if (motoristaEncontrado) {
-      setDadosForm((prev) => ({
-        ...prev,
-        motorista: motoristaEncontrado.nome,
-        telefone: motoristaEncontrado.telefone || prev.telefone,
-      }));
-      toast.success(`Motorista ${motoristaEncontrado.nome} encontrado e sincronizado.`);
+    // Só executar busca se matrícula tiver pelo menos 3 caracteres
+    if (matricula.length >= 3) {
+      matriculaDebounceRef.current = setTimeout(() => {
+        const motoristaEncontrado = motoristas.find((m) => m.matricula === matricula);
+
+        if (motoristaEncontrado) {
+          setDadosForm((prev) => ({
+            ...prev,
+            motorista: motoristaEncontrado.nome,
+            telefone: motoristaEncontrado.telefone || prev.telefone,
+          }));
+          toast.success(`Motorista ${motoristaEncontrado.nome} encontrado e sincronizado.`);
+        } else {
+          setDadosForm((prev) => ({ ...prev, motorista: '', telefone: '' }));
+          toast.error('Matrícula não encontrada. Verifique se o motorista está cadastrado.');
+        }
+      }, 500); // Aguardar 500ms após parar de digitar
     } else {
+      // Se matrícula for curta demais, limpar campos
       setDadosForm((prev) => ({ ...prev, motorista: '', telefone: '' }));
-      if (matricula.trim()) {
-        toast.error('Matrícula não encontrada. Verifique se o motorista está cadastrado.');
-      }
     }
   };
+
+  // Cleanup do timeout do debounce quando o componente for desmontado
+  useEffect(() => {
+    return () => {
+      if (matriculaDebounceRef.current) {
+        clearTimeout(matriculaDebounceRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setSelecionados((prev) => {
@@ -1046,9 +1066,9 @@ export default function GerenciarAgendamentosPage() {
                       value={dadosForm.matricula}
                       onChange={(e) => handleMatriculaChange(e.target.value)}
                       className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-                      placeholder="Digite a matrícula para sincronizar dados"
+                      placeholder="Digite pelo menos 3 caracteres para buscar"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Digite a matrícula para buscar e sincronizar os dados do motorista</p>
+                    <p className="text-xs text-gray-500 mt-1">A busca automática acontece após digitar 3+ caracteres e aguardar 0.5s</p>
                   </div>
 
                   <div>
