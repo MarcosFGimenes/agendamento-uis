@@ -3,6 +3,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { FiCheckCircle, FiX, FiChevronDown, FiChevronUp, FiShare2, FiCopy, FiClock, FiCalendar, FiUser, FiPhone, FiMapPin, FiTruck, FiDownload } from 'react-icons/fi';
 import { downloadElementAsPng } from '../utils/exportAsImage';
+import { doc, getDoc } from 'firebase/firestore';
+import { getDb } from '../lib/firebase';
 
 type ComprovanteProps = {
   agendamento: {
@@ -27,6 +29,7 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
   const [mostrarInstrucoes, setMostrarInstrucoes] = useState<boolean>(false);
   const [copiado, setCopiado] = useState<boolean>(false);
   const [salvandoImagem, setSalvandoImagem] = useState<boolean>(false);
+  const [instrucoesDinamicas, setInstrucoesDinamicas] = useState<string>('');
   const comprovanteRef = useRef<HTMLDivElement>(null);
   
 
@@ -40,31 +43,70 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
-  const instrucoes = {
-    retirada: [
-      'Retire a chave do veículo na balança da UIS',
-      'Não será permitido retirar veículo diferente do agendado',
-      'Verifique o estado do veículo (combustível, pneus, lataria) antes de sair',
-      'Confira os documentos do veículo e equipamentos obrigatórios'
-    ],
-    utilizacao: [
-      'Utilize o diário de bordo, registrando inicio e fim de uso',
-      'Mantenha o veículo limpo e em boas condições',
-      'Respeite os limites de velocidade e leis de trânsito',
-      'Use o veículo apenas para o destino informado no agendamento'
-    ],
-    devolucao: [
-      'Devolva o veículo no pátio da UIS no horário agendado e deixe a chave na balança',
-      'Registre o fim do uso no diário de bordo',
-      'Certifique-se de que o tanque está com o mesmo nível de combustível',
-      'Informe qualquer ocorrência ou dano ao responsável ou PCM 45 99127-6269'
-    ],
-    emergencia: [
-      'Em caso de acidente: acione o serviço de emergência (192/193) e notifique imediatamente o gestor da frota (45 99856-2656 - Willian Cristian)',
-      'Problemas mecânicos: entre em contato com o gestor da frota imediatamente',
-      'Emergências médicas: acione os serviços de emergência (192/193) e comunique a UIS.',
-    ]
-  };
+  useEffect(() => {
+    const carregarInstrucoes = async () => {
+      try {
+        const instrucoesDoc = await getDoc(doc(getDb(), 'configuracoes', 'instrucoes'));
+        if (instrucoesDoc.exists()) {
+          setInstrucoesDinamicas(instrucoesDoc.data().texto || '');
+        } else {
+          // Fallback para instruções padrão se não existir no banco
+          setInstrucoesDinamicas(`Instruções para uso do veículo
+
+1. Retirada do Veículo
+• Retire a chave do veículo na balança da UIS
+• Não será permitido retirar veículo diferente do agendado
+• Verifique o estado do veículo (combustível, pneus, lataria) antes de sair
+• Confira os documentos do veículo e equipamentos obrigatórios
+
+2. Durante a Utilização
+• Utilize o diário de bordo, registrando inicio e fim de uso
+• Mantenha o veículo limpo e em boas condições
+• Respeite os limites de velocidade e leis de trânsito
+• Use o veículo apenas para o destino informado no agendamento
+
+3. Devolução
+• Devolva o veículo no pátio da UIS no horário agendado e deixe a chave na balança
+• Registre o fim do uso no diário de bordo
+• Certifique-se de que o tanque está com o mesmo nível de combustível
+• Informe qualquer ocorrência ou dano ao responsável ou PCM 45 99127-6269
+
+4. Emergências
+• Em caso de acidente: acione o serviço de emergência (192/193) e notifique imediatamente o gestor da frota (45 99856-2656 - Willian Cristian)
+• Problemas mecânicos: entre em contato com o gestor da frota imediatamente
+• Emergências médicas: acione os serviços de emergência (192/193) e comunique a UIS.`);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar instruções:', error);
+        // Em caso de erro, usar instruções padrão
+        setInstrucoesDinamicas(`Instruções para uso do veículo
+
+1. Retirada do Veículo
+• Retire a chave do veículo na balança da UIS
+• Não será permitido retirar veículo diferente do agendado
+• Verifique o estado do veículo (combustível, pneus, lataria) antes de sair
+• Confira os documentos do veículo e equipamentos obrigatórios
+
+2. Durante a Utilização
+• Utilize o diário de bordo, registrando inicio e fim de uso
+• Mantenha o veículo limpo e em boas condições
+• Respeite os limites de velocidade e leis de trânsito
+• Use o veículo apenas para o destino informado no agendamento
+
+3. Devolução
+• Devolva o veículo no pátio da UIS no horário agendado e deixe a chave na balança
+• Registre o fim do uso no diário de bordo
+• Certifique-se de que o tanque está com o mesmo nível de combustível
+• Informe qualquer ocorrência ou dano ao responsável ou PCM 45 99127-6269
+
+4. Emergências
+• Em caso de acidente: acione o serviço de emergência (192/193) e notifique imediatamente o gestor da frota (45 99856-2656 - Willian Cristian)
+• Problemas mecânicos: entre em contato com o gestor da frota imediatamente
+• Emergências médicas: acione os serviços de emergência (192/193) e comunique a UIS.`);
+      }
+    };
+    carregarInstrucoes();
+  }, []);
 
   const generateComprovanteText = () => {
     return `📋 *COMPROVANTE DE AGENDAMENTO* 📋\n\n` +
@@ -287,60 +329,8 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
             </button>
 
             <div className={`mt-2 space-y-4 text-sm text-gray-500 ${mostrarInstrucoes ? 'block' : 'hidden'}`}>
-              <div>
-                <h4 className="font-medium text-gray-700 flex items-center">
-                  <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-800 mr-2">
-                    1
-                  </span>
-                  Retirada do Veículo
-                </h4>
-                <ul className="mt-2 pl-8 space-y-1 list-disc">
-                  {instrucoes.retirada.map((item, i) => (
-                    <li key={`retirada-${i}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-
-              <div>
-                <h4 className="font-medium text-gray-700 flex items-center">
-                  <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-800 mr-2">
-                    2
-                  </span>
-                  Durante a Utilização
-                </h4>
-                <ul className="mt-2 pl-8 space-y-1 list-disc">
-                  {instrucoes.utilizacao.map((item, i) => (
-                    <li key={`uso-${i}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-
-              <div>
-                <h4 className="font-medium text-gray-700 flex items-center">
-                  <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-800 mr-2">
-                    3
-                  </span>
-                  Devolução
-                </h4>
-                <ul className="mt-2 pl-8 space-y-1 list-disc">
-                  {instrucoes.devolucao.map((item, i) => (
-                    <li key={`devolucao-${i}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-
-              <div>
-                <h4 className="font-medium text-gray-700 flex items-center">
-                  <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-800 mr-2">
-                    4
-                  </span>
-                  Emergências
-                </h4>
-                <ul className="mt-2 pl-8 space-y-1 list-disc">
-                  {instrucoes.emergencia.map((item, i) => (
-                    <li key={`emergencia-${i}`}>{item}</li>
-                  ))}
-                </ul>
+              <div className="whitespace-pre-line">
+                {instrucoesDinamicas}
               </div>
             </div>
           </div>

@@ -19,6 +19,8 @@ import type { Locale } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
+import { getDb } from '@/app/lib/firebase';
 
 const localizer = dateFnsLocalizer({
   format: (date: Date, pattern: string, options?: { locale?: Locale }) =>
@@ -64,9 +66,11 @@ export default function AdministracaoPage() {
   const [rankingType, setRankingType] = useState<'motoristas' | 'veiculos'>('motoristas');
   const [rankingPeriod, setRankingPeriod] = useState<'diario' | 'semanal' | 'mensal'>('semanal');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [activeTab, setActiveTab] = useState<'resumo' | 'calendario'>('resumo');
+  const [activeTab, setActiveTab] = useState<'resumo' | 'calendario' | 'configuracoes'>('resumo');
   const [calendarView, setCalendarView] = useState<View>('week');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [instrucoes, setInstrucoes] = useState<string>('');
+  const [salvandoInstrucoes, setSalvandoInstrucoes] = useState(false);
 
   useEffect(() => {
     const carregarDados = async () => {
@@ -79,6 +83,39 @@ export default function AdministracaoPage() {
         ]);
         setAgendamentos(agendamentosLista);
         setVeiculos(veiculosLista);
+
+        // Carregar instruções
+        const instrucoesDoc = await getDoc(doc(getDb(), 'configuracoes', 'instrucoes'));
+        if (instrucoesDoc.exists()) {
+          setInstrucoes(instrucoesDoc.data().texto || '');
+        } else {
+          // Instruções padrão se não existir no banco
+          const instrucoesPadrao = `Instruções para uso do veículo
+
+1. Retirada do Veículo
+• Retire a chave do veículo na balança da UIS
+• Não será permitido retirar veículo diferente do agendado
+• Verifique o estado do veículo (combustível, pneus, lataria) antes de sair
+• Confira os documentos do veículo e equipamentos obrigatórios
+
+2. Durante a Utilização
+• Utilize o diário de bordo, registrando inicio e fim de uso
+• Mantenha o veículo limpo e em boas condições
+• Respeite os limites de velocidade e leis de trânsito
+• Use o veículo apenas para o destino informado no agendamento
+
+3. Devolução
+• Devolva o veículo no pátio da UIS no horário agendado e deixe a chave na balança
+• Registre o fim do uso no diário de bordo
+• Certifique-se de que o tanque está com o mesmo nível de combustível
+• Informe qualquer ocorrência ou dano ao responsável ou PCM 45 99127-6269
+
+4. Emergências
+• Em caso de acidente: acione o serviço de emergência (192/193) e notifique imediatamente o gestor da frota (45 99856-2656 - Willian Cristian)
+• Problemas mecânicos: entre em contato com o gestor da frota imediatamente
+• Emergências médicas: acione os serviços de emergência (192/193) e comunique a UIS.`;
+          setInstrucoes(instrucoesPadrao);
+        }
       } catch (err) {
         console.error('Erro ao carregar dados:', err);
         setError('Falha ao carregar dados. Tente novamente.');
@@ -88,6 +125,23 @@ export default function AdministracaoPage() {
     };
     carregarDados();
   }, []);
+
+  const salvarInstrucoes = async () => {
+    try {
+      setSalvandoInstrucoes(true);
+      await setDoc(doc(getDb(), 'configuracoes', 'instrucoes'), {
+        texto: instrucoes,
+        atualizadoEm: new Date().toISOString(),
+        atualizadoPor: 'admin' // Pode ser melhorado para usar o usuário logado
+      });
+      alert('Instruções salvas com sucesso!');
+    } catch (error) {
+      console.error('Erro ao salvar instruções:', error);
+      alert('Erro ao salvar instruções. Tente novamente.');
+    } finally {
+      setSalvandoInstrucoes(false);
+    }
+  };
 
   const getVeiculoNome = useCallback((veiculoId: string) => {
     const veiculo = veiculos.find((v) => v.id === veiculoId);
@@ -297,6 +351,16 @@ export default function AdministracaoPage() {
                 }`}
               >
                 Calendário
+              </button>
+              <button
+                onClick={() => setActiveTab('configuracoes')}
+                className={`px-3 py-2 text-sm font-medium rounded-lg ${
+                  activeTab === 'configuracoes'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Configurações
               </button>
             </div>
           </div>
@@ -595,7 +659,7 @@ export default function AdministracaoPage() {
                 )}
               </div>
             </div>
-          ) : (
+          ) : activeTab === 'calendario' ? (
             <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-200">
               <h2 className="text-lg sm:text-xl font-semibold text-gray-800 mb-4">Calendário de Agendamentos</h2>
               <style jsx global>{`
@@ -818,7 +882,40 @@ export default function AdministracaoPage() {
                 }
               />
             </div>
-          )}
+          ) : activeTab === 'configuracoes' ? (
+            <div className="space-y-6">
+              <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-200">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-800 mb-4">Configurações do Sistema</h2>
+
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-md font-medium text-gray-700 mb-3">Instruções de Uso do Veículo</h3>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Personalize as instruções que aparecem no comprovante de agendamento. Estas instruções são exibidas para todos os usuários.
+                    </p>
+
+                    <textarea
+                      value={instrucoes}
+                      onChange={(e) => setInstrucoes(e.target.value)}
+                      rows={20}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm font-mono"
+                      placeholder="Digite as instruções de uso do veículo..."
+                    />
+
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        onClick={salvarInstrucoes}
+                        disabled={salvandoInstrucoes}
+                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {salvandoInstrucoes ? 'Salvando...' : 'Salvar Instruções'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </main>
       </div>
     </ProtectedRoute>
