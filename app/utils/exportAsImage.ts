@@ -1,4 +1,7 @@
-type ExportOptions = { backgroundColor?: string; pixelRatio?: number };
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+
+type ExportOptions = { backgroundColor?: string; pixelRatio?: number; scale?: number };
 
 const isSvgElement = (element: Element): element is SVGElement =>
   element.namespaceURI === 'http://www.w3.org/2000/svg' && !(element instanceof SVGForeignObjectElement);
@@ -292,6 +295,54 @@ export async function elementToPng(element: HTMLElement, options?: ExportOptions
     }
     throw error;
   }
+}
+
+export async function elementToPdfBlob(element: HTMLElement, options?: ExportOptions) {
+  const canvas = await html2canvas(element, {
+    backgroundColor: options?.backgroundColor ?? '#ffffff',
+    scale: options?.scale ?? Math.max(2, window.devicePixelRatio || 1),
+    useCORS: true,
+    allowTaint: false,
+    logging: false,
+  });
+
+  const imgData = canvas.toDataURL('image/png');
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: canvas.width > canvas.height ? 'landscape' : 'portrait' });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const imageProps = pdf.getImageProperties(imgData);
+  const imageWidth = pageWidth;
+  const imageHeight = (imageProps.height * pageWidth) / imageProps.width;
+
+  if (imageHeight <= pageHeight) {
+    pdf.addImage(imgData, 'PNG', 0, 0, imageWidth, imageHeight);
+  } else {
+    const pageCount = Math.ceil(imageHeight / pageHeight);
+    for (let page = 0; page < pageCount; page += 1) {
+      const offsetY = -(page * pageHeight);
+      pdf.addImage(imgData, 'PNG', 0, offsetY, imageWidth, imageHeight, undefined, 'FAST');
+      if (page < pageCount - 1) {
+        pdf.addPage();
+      }
+    }
+  }
+
+  return pdf.output('blob');
+}
+
+export async function downloadElementAsPdf(element: HTMLElement, filename: string, options?: ExportOptions) {
+  const blob = await elementToPdfBlob(element, options);
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  requestAnimationFrame(() => {
+    URL.revokeObjectURL(objectUrl);
+  });
 }
 
 export async function downloadElementAsPng(element: HTMLElement, filename: string, options?: ExportOptions) {

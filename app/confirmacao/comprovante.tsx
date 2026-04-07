@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { FiCheckCircle, FiX, FiChevronDown, FiChevronUp, FiShare2, FiCopy, FiClock, FiCalendar, FiUser, FiPhone, FiMapPin, FiTruck, FiDownload } from 'react-icons/fi';
-import { downloadElementAsPng } from '../utils/exportAsImage';
+import { downloadElementAsPdf, elementToPdfBlob } from '../utils/exportAsImage';
 import { doc, getDoc } from 'firebase/firestore';
 import { getDb } from '../lib/firebase';
 
@@ -28,7 +28,7 @@ type ComprovanteProps = {
 export default function Comprovante({ agendamento, onClose }: ComprovanteProps) {
   const [mostrarInstrucoes, setMostrarInstrucoes] = useState<boolean>(false);
   const [copiado, setCopiado] = useState<boolean>(false);
-  const [salvandoImagem, setSalvandoImagem] = useState<boolean>(false);
+  const [salvandoPdf, setSalvandoPdf] = useState<boolean>(false);
   const [instrucoesDinamicas, setInstrucoesDinamicas] = useState<string>('');
   const comprovanteRef = useRef<HTMLDivElement>(null);
   
@@ -136,21 +136,34 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
   };
 
   const handleCompartilhar = async () => {
-    const texto = generateComprovanteText();
+    if (!comprovanteRef.current) return;
+
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const filename = `comprovante-${agendamento.codigo}-${timestamp}.pdf`;
+
     try {
-      if (navigator.share) {
+      const pdfBlob = await elementToPdfBlob(comprovanteRef.current, { backgroundColor: '#ffffff', scale: 2 });
+      const file = new File([pdfBlob], filename, { type: 'application/pdf' });
+
+      if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({
           title: 'Comprovante de Agendamento de Veículo',
-          text: texto
+          files: [file],
         });
       } else {
-        handleCopiar();
-        alert('Web Share não suportado. Texto copiado para a área de transferência!');
+        alert('Seu navegador não suporta compartilhamento de arquivos PDF. O arquivo será baixado automaticamente.');
+        const objectUrl = URL.createObjectURL(pdfBlob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        requestAnimationFrame(() => URL.revokeObjectURL(objectUrl));
       }
     } catch (err) {
-      console.error('Erro ao compartilhar:', err);
-      handleCopiar();
-      alert('Erro ao compartilhar. Texto copiado para a área de transferência!');
+      console.error('Erro ao compartilhar PDF:', err);
+      alert('Falha ao compartilhar o comprovante em PDF. Tente novamente.');
     }
   };
 
@@ -161,20 +174,20 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
     window.open(url, '_blank');
   };
 
-  const handleSalvarImagem = async () => {
+  const handleSalvarPdf = async () => {
     if (!comprovanteRef.current) return;
 
-    setSalvandoImagem(true);
+    setSalvandoPdf(true);
     try {
       const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-      const filename = `comprovante-${agendamento.codigo}-${timestamp}.png`;
-      await downloadElementAsPng(comprovanteRef.current, filename);
-      alert('Imagem salva com sucesso!');
+      const filename = `comprovante-${agendamento.codigo}-${timestamp}.pdf`;
+      await downloadElementAsPdf(comprovanteRef.current, filename, { backgroundColor: '#ffffff', scale: 2 });
+      alert('PDF salvo com sucesso!');
     } catch (error) {
-      console.error('Erro ao salvar imagem:', error);
-      alert('Erro ao salvar imagem. Tente novamente.');
+      console.error('Erro ao salvar PDF:', error);
+      alert('Erro ao salvar o comprovante em PDF. Tente novamente.');
     } finally {
-      setSalvandoImagem(false);
+      setSalvandoPdf(false);
     }
   };
 
@@ -356,12 +369,12 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
             </button>
 
             <button
-              onClick={handleSalvarImagem}
-              disabled={salvandoImagem}
+              onClick={handleSalvarPdf}
+              disabled={salvandoPdf}
               className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
             >
               <FiDownload className="-ml-0.5 mr-2 h-4 w-4" />
-              {salvandoImagem ? 'Salvando...' : 'Salvar Imagem'}
+              {salvandoPdf ? 'Salvando...' : 'Salvar PDF'}
             </button>
             
             <button
