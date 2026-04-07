@@ -23,10 +23,20 @@ export interface Veiculo {
   };
 }
 
+export interface Motorista {
+  id?: string;
+  nome: string;
+  matricula: string;
+  setor: string;
+  cargo: string;
+  telefone: string;
+}
+
 export default function GerenciarAgendamentosPage() {
   const router = useRouter();
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
   const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
+  const [motoristas, setMotoristas] = useState<Motorista[]>([]);
   const [formAberto, setFormAberto] = useState<'novo' | 'editar' | null>(null);
   const [dadosForm, setDadosForm] = useState<Omit<Agendamento, 'id'> & { id?: string }>({
     saida: '',
@@ -62,6 +72,14 @@ export default function GerenciarAgendamentosPage() {
       ]);
       setAgendamentos(agendamentosLista.filter(ag => isValid(new Date(ag.saida)) && isValid(new Date(ag.chegada))));
       setVeiculos(veiculosLista);
+
+      // Carregar motoristas
+      const motoristasSnap = await getDocs(collection(getDb(), 'motoristas'));
+      const motoristasLista = motoristasSnap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      } as Motorista));
+      setMotoristas(motoristasLista);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       toast.error('Falha ao carregar dados. Tente novamente.');
@@ -73,6 +91,27 @@ export default function GerenciarAgendamentosPage() {
   useEffect(() => {
     carregarDados();
   }, [carregarDados]);
+
+  const handleMatriculaChange = (matricula: string) => {
+    setDadosForm((prev) => ({ ...prev, matricula }));
+    setErro('');
+
+    const motoristaEncontrado = motoristas.find((m) => m.matricula === matricula);
+
+    if (motoristaEncontrado) {
+      setDadosForm((prev) => ({
+        ...prev,
+        motorista: motoristaEncontrado.nome,
+        telefone: motoristaEncontrado.telefone || prev.telefone,
+      }));
+      toast.success(`Motorista ${motoristaEncontrado.nome} encontrado e sincronizado.`);
+    } else {
+      setDadosForm((prev) => ({ ...prev, motorista: '', telefone: '' }));
+      if (matricula.trim()) {
+        toast.error('Matrícula não encontrada. Verifique se o motorista está cadastrado.');
+      }
+    }
+  };
 
   useEffect(() => {
     setSelecionados((prev) => {
@@ -993,9 +1032,11 @@ export default function GerenciarAgendamentosPage() {
                     <input
                       type="text"
                       value={dadosForm.motorista}
-                      onChange={(e) => setDadosForm({ ...dadosForm, motorista: e.target.value })}
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
+                      readOnly
+                      className="w-full p-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700 text-sm cursor-not-allowed"
+                      placeholder="Será preenchido automaticamente pela matrícula"
                     />
+                    <p className="text-xs text-gray-500 mt-1">Campo preenchido automaticamente ao informar a matrícula</p>
                   </div>
 
                   <div>
@@ -1003,9 +1044,11 @@ export default function GerenciarAgendamentosPage() {
                     <input
                       type="text"
                       value={dadosForm.matricula}
-                      onChange={(e) => setDadosForm({ ...dadosForm, matricula: e.target.value })}
+                      onChange={(e) => handleMatriculaChange(e.target.value)}
                       className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
+                      placeholder="Digite a matrícula para sincronizar dados"
                     />
+                    <p className="text-xs text-gray-500 mt-1">Digite a matrícula para buscar e sincronizar os dados do motorista</p>
                   </div>
 
                   <div>
@@ -1013,10 +1056,11 @@ export default function GerenciarAgendamentosPage() {
                     <input
                       type="text"
                       value={dadosForm.telefone}
-                      onChange={(e) => setDadosForm({ ...dadosForm, telefone: e.target.value })}
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-                      placeholder="(XX) XXXXX-XXXX"
+                      readOnly
+                      className="w-full p-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700 text-sm cursor-not-allowed"
+                      placeholder="Será preenchido automaticamente pela matrícula"
                     />
+                    <p className="text-xs text-gray-500 mt-1">Campo preenchido automaticamente ao informar a matrícula</p>
                   </div>
 
                   <div>
