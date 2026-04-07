@@ -71,7 +71,7 @@ export class AgendamentoService {
 
   async atualizar(id: string, dados: Partial<AgendamentoDados>): Promise<void> {
     const docRef = doc(this.db, this.colName, id);
-    const dadosLimpos: Record<string, unknown> = {};
+    const dadosLimpos: Record<string, any> = {};
     
     Object.entries(dados).forEach(([key, value]) => {
       if (value !== undefined) {
