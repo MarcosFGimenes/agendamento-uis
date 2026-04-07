@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { FiCheckCircle, FiX, FiChevronDown, FiChevronUp, FiShare2, FiCopy, FiClock, FiCalendar, FiUser, FiPhone, FiMapPin, FiTruck } from 'react-icons/fi';
+import React, { useEffect, useState, useRef } from 'react';
+import { FiCheckCircle, FiX, FiChevronDown, FiChevronUp, FiShare2, FiCopy, FiClock, FiCalendar, FiUser, FiPhone, FiMapPin, FiTruck, FiDownload } from 'react-icons/fi';
+import { downloadElementAsPng } from '../utils/exportAsImage';
 
 type ComprovanteProps = {
   agendamento: {
@@ -25,6 +26,8 @@ type ComprovanteProps = {
 export default function Comprovante({ agendamento, onClose }: ComprovanteProps) {
   const [mostrarInstrucoes, setMostrarInstrucoes] = useState<boolean>(false);
   const [copiado, setCopiado] = useState<boolean>(false);
+  const [salvandoImagem, setSalvandoImagem] = useState<boolean>(false);
+  const comprovanteRef = useRef<HTMLDivElement>(null);
   
 
   useEffect(() => {
@@ -116,16 +119,36 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
     window.open(url, '_blank');
   };
 
+  const handleSalvarImagem = async () => {
+    if (!comprovanteRef.current) return;
+
+    setSalvandoImagem(true);
+    try {
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      const filename = `comprovante-${agendamento.codigo}-${timestamp}.png`;
+      await downloadElementAsPng(comprovanteRef.current, filename);
+      alert('Imagem salva com sucesso!');
+    } catch (error) {
+      console.error('Erro ao salvar imagem:', error);
+      alert('Erro ao salvar imagem. Tente novamente.');
+    } finally {
+      setSalvandoImagem(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overscroll-contain">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-30 backdrop-blur-sm flex items-center justify-center z-50 p-4 overscroll-contain">
+      <div ref={comprovanteRef} className="bg-white rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg max-h-[90vh] overflow-y-auto">
         {/* Cabeçalho */}
         <div className="bg-green-600 text-white p-4 flex justify-between items-center">
           <div className="flex items-center space-x-2">
             <FiCheckCircle className="text-xl" />
-            <h2 className="text-lg font-bold">Agendamento Confirmado</h2>
+            <div>
+              <h2 className="text-lg font-bold">Agendamento Confirmado</h2>
+              <p className="text-sm opacity-90">Código: {agendamento.codigo}</p>
+            </div>
           </div>
-          <button 
+          <button
             onClick={onClose}
             className="text-white hover:text-green-100 transition-colors"
           >
@@ -340,6 +363,15 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
             >
               <FiCopy className="-ml-0.5 mr-2 h-4 w-4" />
               {copiado ? 'Copiado!' : 'Copiar'}
+            </button>
+
+            <button
+              onClick={handleSalvarImagem}
+              disabled={salvandoImagem}
+              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
+            >
+              <FiDownload className="-ml-0.5 mr-2 h-4 w-4" />
+              {salvandoImagem ? 'Salvando...' : 'Salvar Imagem'}
             </button>
             
             <button
