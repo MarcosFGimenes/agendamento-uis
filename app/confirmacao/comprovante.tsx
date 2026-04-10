@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { FiCheckCircle, FiX, FiChevronDown, FiChevronUp, FiShare2, FiCopy, FiClock, FiCalendar, FiUser, FiPhone, FiMapPin, FiTruck } from 'react-icons/fi';
+import { FiCheckCircle, FiX, FiChevronDown, FiChevronUp, FiCopy, FiClock, FiCalendar, FiUser, FiPhone, FiMapPin, FiTruck } from 'react-icons/fi';
+import { doc, getDoc } from 'firebase/firestore';
+import { getDb } from '../lib/firebase';
 
 type ComprovanteProps = {
   agendamento: {
@@ -25,6 +27,7 @@ type ComprovanteProps = {
 export default function Comprovante({ agendamento, onClose }: ComprovanteProps) {
   const [mostrarInstrucoes, setMostrarInstrucoes] = useState<boolean>(false);
   const [copiado, setCopiado] = useState<boolean>(false);
+  const [instrucoesDinamicas, setInstrucoesDinamicas] = useState<string>('');
   
 
   useEffect(() => {
@@ -37,31 +40,70 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
-  const instrucoes = {
-    retirada: [
-      'Retire a chave do veículo na balança da UIS',
-      'Não será permitido retirar veículo diferente do agendado',
-      'Verifique o estado do veículo (combustível, pneus, lataria) antes de sair',
-      'Confira os documentos do veículo e equipamentos obrigatórios'
-    ],
-    utilizacao: [
-      'Utilize o diário de bordo, registrando inicio e fim de uso',
-      'Mantenha o veículo limpo e em boas condições',
-      'Respeite os limites de velocidade e leis de trânsito',
-      'Use o veículo apenas para o destino informado no agendamento'
-    ],
-    devolucao: [
-      'Devolva o veículo no pátio da UIS no horário agendado e deixe a chave na balança',
-      'Registre o fim do uso no diário de bordo',
-      'Certifique-se de que o tanque está com o mesmo nível de combustível',
-      'Informe qualquer ocorrência ou dano ao responsável ou PCM 45 99127-6269'
-    ],
-    emergencia: [
-      'Em caso de acidente: acione o serviço de emergência (192/193) e notifique imediatamente o gestor da frota (45 99856-2656 - Willian Cristian)',
-      'Problemas mecânicos: entre em contato com o gestor da frota imediatamente',
-      'Emergências médicas: acione os serviços de emergência (192/193) e comunique a UIS.',
-    ]
-  };
+  useEffect(() => {
+    const carregarInstrucoes = async () => {
+      try {
+        const instrucoesDoc = await getDoc(doc(getDb(), 'configuracoes', 'instrucoes'));
+        if (instrucoesDoc.exists()) {
+          setInstrucoesDinamicas(instrucoesDoc.data().texto || '');
+        } else {
+          // Fallback para instruções padrão se não existir no banco
+          setInstrucoesDinamicas(`Instruções para uso do veículo
+
+1. Retirada do Veículo
+• Retire a chave do veículo na balança da UIS
+• Não será permitido retirar veículo diferente do agendado
+• Verifique o estado do veículo (combustível, pneus, lataria) antes de sair
+• Confira os documentos do veículo e equipamentos obrigatórios
+
+2. Durante a Utilização
+• Utilize o diário de bordo, registrando inicio e fim de uso
+• Mantenha o veículo limpo e em boas condições
+• Respeite os limites de velocidade e leis de trânsito
+• Use o veículo apenas para o destino informado no agendamento
+
+3. Devolução
+• Devolva o veículo no pátio da UIS no horário agendado e deixe a chave na balança
+• Registre o fim do uso no diário de bordo
+• Certifique-se de que o tanque está com o mesmo nível de combustível
+• Informe qualquer ocorrência ou dano ao responsável ou PCM 45 99127-6269
+
+4. Emergências
+• Em caso de acidente: acione o serviço de emergência (192/193) e notifique imediatamente o gestor da frota (45 99856-2656 - Willian Cristian)
+• Problemas mecânicos: entre em contato com o gestor da frota imediatamente
+• Emergências médicas: acione os serviços de emergência (192/193) e comunique a UIS.`);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar instruções:', error);
+        // Em caso de erro, usar instruções padrão
+        setInstrucoesDinamicas(`Instruções para uso do veículo
+
+1. Retirada do Veículo
+• Retire a chave do veículo na balança da UIS
+• Não será permitido retirar veículo diferente do agendado
+• Verifique o estado do veículo (combustível, pneus, lataria) antes de sair
+• Confira os documentos do veículo e equipamentos obrigatórios
+
+2. Durante a Utilização
+• Utilize o diário de bordo, registrando inicio e fim de uso
+• Mantenha o veículo limpo e em boas condições
+• Respeite os limites de velocidade e leis de trânsito
+• Use o veículo apenas para o destino informado no agendamento
+
+3. Devolução
+• Devolva o veículo no pátio da UIS no horário agendado e deixe a chave na balança
+• Registre o fim do uso no diário de bordo
+• Certifique-se de que o tanque está com o mesmo nível de combustível
+• Informe qualquer ocorrência ou dano ao responsável ou PCM 45 99127-6269
+
+4. Emergências
+• Em caso de acidente: acione o serviço de emergência (192/193) e notifique imediatamente o gestor da frota (45 99856-2656 - Willian Cristian)
+• Problemas mecânicos: entre em contato com o gestor da frota imediatamente
+• Emergências médicas: acione os serviços de emergência (192/193) e comunique a UIS.`);
+      }
+    };
+    carregarInstrucoes();
+  }, []);
 
   const generateComprovanteText = () => {
     return `📋 *COMPROVANTE DE AGENDAMENTO* 📋\n\n` +
@@ -90,42 +132,26 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
     }
   };
 
-  const handleCompartilhar = async () => {
-    const texto = generateComprovanteText();
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: 'Comprovante de Agendamento de Veículo',
-          text: texto
-        });
-      } else {
-        handleCopiar();
-        alert('Web Share não suportado. Texto copiado para a área de transferência!');
-      }
-    } catch (err) {
-      console.error('Erro ao compartilhar:', err);
-      handleCopiar();
-      alert('Erro ao compartilhar. Texto copiado para a área de transferência!');
-    }
-  };
-
   const handleCompartilharWhatsApp = () => {
     const texto = encodeURIComponent(generateComprovanteText());
-    const numeroWhatsApp = '+5545998562656'; // Número editável, celular do PCM
-    const url = `https://wa.me/${numeroWhatsApp}?text=${texto}`;
+    // Removido o número específico para abrir a lista de contatos/grupos
+    const url = `https://wa.me/?text=${texto}`;
     window.open(url, '_blank');
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overscroll-contain">
+    <div className="fixed inset-0 bg-black bg-opacity-30 backdrop-blur-sm flex items-center justify-center z-50 p-4 overscroll-contain">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg max-h-[90vh] overflow-y-auto">
         {/* Cabeçalho */}
         <div className="bg-green-600 text-white p-4 flex justify-between items-center">
           <div className="flex items-center space-x-2">
             <FiCheckCircle className="text-xl" />
-            <h2 className="text-lg font-bold">Agendamento Confirmado</h2>
+            <div>
+              <h2 className="text-lg font-bold">Agendamento Confirmado</h2>
+              <p className="text-sm opacity-90">Código: {agendamento.codigo}</p>
+            </div>
           </div>
-          <button 
+          <button
             onClick={onClose}
             className="text-white hover:text-green-100 transition-colors"
           >
@@ -264,75 +290,15 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
             </button>
 
             <div className={`mt-2 space-y-4 text-sm text-gray-500 ${mostrarInstrucoes ? 'block' : 'hidden'}`}>
-              <div>
-                <h4 className="font-medium text-gray-700 flex items-center">
-                  <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-800 mr-2">
-                    1
-                  </span>
-                  Retirada do Veículo
-                </h4>
-                <ul className="mt-2 pl-8 space-y-1 list-disc">
-                  {instrucoes.retirada.map((item, i) => (
-                    <li key={`retirada-${i}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-
-              <div>
-                <h4 className="font-medium text-gray-700 flex items-center">
-                  <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-800 mr-2">
-                    2
-                  </span>
-                  Durante a Utilização
-                </h4>
-                <ul className="mt-2 pl-8 space-y-1 list-disc">
-                  {instrucoes.utilizacao.map((item, i) => (
-                    <li key={`uso-${i}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-
-              <div>
-                <h4 className="font-medium text-gray-700 flex items-center">
-                  <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-800 mr-2">
-                    3
-                  </span>
-                  Devolução
-                </h4>
-                <ul className="mt-2 pl-8 space-y-1 list-disc">
-                  {instrucoes.devolucao.map((item, i) => (
-                    <li key={`devolucao-${i}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-
-              <div>
-                <h4 className="font-medium text-gray-700 flex items-center">
-                  <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-800 mr-2">
-                    4
-                  </span>
-                  Emergências
-                </h4>
-                <ul className="mt-2 pl-8 space-y-1 list-disc">
-                  {instrucoes.emergencia.map((item, i) => (
-                    <li key={`emergencia-${i}`}>{item}</li>
-                  ))}
-                </ul>
+              <div className="whitespace-pre-line">
+                {instrucoesDinamicas}
               </div>
             </div>
           </div>
         </div>
 
         {/* Rodapé com ações */}
-        <div className="bg-gray-50 px-4 py-3 flex flex-col sm:flex-row justify-between sm:items-center gap-3 sm:gap-0 sm:px-6 rounded-b-xl">
-          <button
-            onClick={handleCompartilhar}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none w-full sm:w-auto"
-          >
-            <FiShare2 className="-ml-0.5 mr-2 h-4 w-4" />
-            Compartilhar
-          </button>
-          
+        <div className="bg-gray-50 px-4 py-3 flex flex-col sm:flex-row justify-end sm:items-center gap-3 sm:gap-0 sm:px-6 rounded-b-xl">
           <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3 w-full sm:w-auto">
             <button
               onClick={handleCopiar}
@@ -344,12 +310,13 @@ export default function Comprovante({ agendamento, onClose }: ComprovanteProps) 
             
             <button
               onClick={handleCompartilharWhatsApp}
+              title="Abrir WhatsApp para selecionar contato ou grupo"
               className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none w-full sm:w-auto"
             >
               <svg className="-ml-0.5 mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.134.297-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.074-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.318-1.66a11.955 11.955 0 005.684 1.44h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
               </svg>
-              WhatsApp
+              Compartilhar no WhatsApp
             </button>
           </div>
         </div>

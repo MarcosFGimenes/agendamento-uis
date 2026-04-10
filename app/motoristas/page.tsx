@@ -249,9 +249,11 @@ export default function MotoristasPage() {
                     value={dadosForm.setor}
                     onChange={(e) => setDadosForm({ ...dadosForm, setor: e.target.value })}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-                    placeholder="Digite o setor"
+                    placeholder="Digite ou selecione o setor"
+                    list="setores"
                     required
                   />
+                  <p className="text-xs text-gray-500 mt-1">Digite um novo setor ou selecione um existente da lista</p>
                 </div>
                 
                 <div>
@@ -423,6 +425,13 @@ export default function MotoristasPage() {
             </div>
           </div>
         </main>
+
+        {/* Datalist para setores */}
+        <datalist id="setores">
+          {setoresUnicos.map((setor) => (
+            <option key={setor} value={setor} />
+          ))}
+        </datalist>
       </div>
     </ProtectedRoute>
   );

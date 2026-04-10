@@ -1,11 +1,48 @@
-type ExportOptions = { backgroundColor?: string; pixelRatio?: number };
+import html2canvas from 'html2canvas';
+
+type ExportOptions = { backgroundColor?: string; pixelRatio?: number; scale?: number };
 
 const isSvgElement = (element: Element): element is SVGElement =>
   element.namespaceURI === 'http://www.w3.org/2000/svg' && !(element instanceof SVGForeignObjectElement);
 
+const sanitizeColorValue = (value: string) => {
+  // Converte cores oklch/rgb com espaços para versões suportadas por html2canvas
+  if (!value) return value;
+  
+  // Converte "rgb(x y z)" para "rgb(x, y, z)" 
+  if (value.startsWith('rgb(') && !value.includes(',')) {
+    value = value.replace(/rgb\(([^)]+)\)/, (match, values) => {
+      const parts = values.trim().split(/\s+/);
+      return `rgb(${parts.join(', ')})`;
+    });
+  }
+  
+  // Remove ou converte oklch - mapeia para grayscale ou cor aproximada
+  if (value.includes('oklch')) {
+    // Extrai valores oklch e aproxima para RGB
+    const oklchMatch = value.match(/oklch\(\s*([\d.]+)%?\s+([\d.]+)\s+([\d.]+)(?:deg)?\s*\)/);
+    if (oklchMatch) {
+      // L (lightness), C (chroma), H (hue)
+      const l = parseFloat(oklchMatch[1]);
+      const h = parseFloat(oklchMatch[3]);
+      
+      // Aproximação simples: converte para RGB baseado na luminosidade
+      const gray = Math.round((l * 255) / 100);
+      return `rgb(${gray}, ${gray}, ${gray})`;
+    }
+  }
+  
+  return value;
+};
+
 const sanitizeStyleValue = (property: string, value: string) => {
   if (!value) {
     return value;
+  }
+
+  // Sanitiza cores problemáticas
+  if (property.includes('color') || property.includes('background')) {
+    value = sanitizeColorValue(value);
   }
 
   // Remove referências a URLs externas (exceto data URLs)
