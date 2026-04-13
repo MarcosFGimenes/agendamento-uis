@@ -174,6 +174,18 @@ const VehicleLocation = ({ placa }: VehicleLocationProps) => {
 
       <div className="text-xs text-gray-600 space-y-1">
         <p><strong>Endereço:</strong> {address}</p>
+        {!(isNaN(latitude) || isNaN(longitude)) && (
+          <p>
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-600 hover:text-blue-800 underline"
+            >
+              Abrir no Google Maps
+            </a>
+          </p>
+        )}
         <p><strong>Velocidade:</strong> {speed} km/h</p>
         {distance !== null && (
           <p><strong>Distância:</strong> {distance} km da sua localização</p>
