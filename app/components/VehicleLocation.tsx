@@ -140,7 +140,7 @@ const VehicleLocation = ({ placa }: VehicleLocationProps) => {
         <p><strong>Última atualização:</strong> {posicao.localDateTime || posicao.dateTime}</p>
       </div>
 
-      <div className="h-32 w-full rounded-md overflow-hidden">
+      <div className="h-48 w-full rounded-md overflow-hidden">
         <MapContainer
           center={[latitude, longitude]}
           zoom={15}
