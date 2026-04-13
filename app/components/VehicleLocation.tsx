@@ -22,6 +22,38 @@ const VehicleLocation = ({ placa }: VehicleLocationProps) => {
   const [posicao, setPosicao] = useState<Posicao3Sat | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [distance, setDistance] = useState<number | null>(null);
+
+  // Calculate distance between two points using Haversine formula
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  useEffect(() => {
+    // Get user's current location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        },
+        (error) => {
+          console.warn('Erro ao obter localização do usuário:', error);
+        },
+        { timeout: 10000 }
+      );
+    }
+  }, []);
 
   useEffect(() => {
     const buscarPosicao = async () => {
@@ -43,6 +75,18 @@ const VehicleLocation = ({ placa }: VehicleLocationProps) => {
       buscarPosicao();
     }
   }, [placa]);
+
+  useEffect(() => {
+    if (posicao && userLocation) {
+      const lat = typeof posicao.latitude === 'number' ? posicao.latitude : parseFloat(posicao.latitude as string);
+      const lng = typeof posicao.longitude === 'number' ? posicao.longitude : parseFloat(posicao.longitude as string);
+
+      if (!isNaN(lat) && !isNaN(lng)) {
+        const dist = calculateDistance(userLocation.lat, userLocation.lng, lat, lng);
+        setDistance(Math.round(dist * 10) / 10); // Round to 1 decimal place
+      }
+    }
+  }, [posicao, userLocation]);
 
   if (carregando) {
     return (
@@ -90,6 +134,9 @@ const VehicleLocation = ({ placa }: VehicleLocationProps) => {
       <div className="text-xs text-gray-600 space-y-1">
         <p><strong>Endereço:</strong> {address}</p>
         <p><strong>Velocidade:</strong> {speed} km/h</p>
+        {distance !== null && (
+          <p><strong>Distância:</strong> {distance} km da sua localização</p>
+        )}
         <p><strong>Última atualização:</strong> {posicao.localDateTime || posicao.dateTime}</p>
       </div>
 
@@ -111,6 +158,9 @@ const VehicleLocation = ({ placa }: VehicleLocationProps) => {
                 <p><strong>Placa:</strong> {placa}</p>
                 <p><strong>Status:</strong> {status}</p>
                 <p><strong>Endereço:</strong> {address}</p>
+                {distance !== null && (
+                  <p><strong>Distância:</strong> {distance} km</p>
+                )}
               </div>
             </Popup>
           </Marker>
