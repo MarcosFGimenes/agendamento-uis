@@ -24,6 +24,31 @@ const VehicleLocation = ({ placa }: VehicleLocationProps) => {
   const [erro, setErro] = useState<string | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
+  const [reverseGeocodeAddress, setReverseGeocodeAddress] = useState<string | null>(null);
+
+  // Reverse geocoding function using Nominatim (OpenStreetMap)
+  const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'AgendamentoUIS/1.0'
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Falha na geocodificação reversa');
+      }
+
+      const data = await response.json();
+      return data.display_name || 'Endereço não encontrado';
+    } catch (error) {
+      console.error('Erro na geocodificação reversa:', error);
+      return 'Erro ao obter endereço';
+    }
+  };
 
   // Calculate distance between two points using Haversine formula
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -88,6 +113,22 @@ const VehicleLocation = ({ placa }: VehicleLocationProps) => {
     }
   }, [posicao, userLocation]);
 
+  useEffect(() => {
+    const obterEnderecoPreciso = async () => {
+      if (posicao) {
+        const lat = typeof posicao.latitude === 'number' ? posicao.latitude : parseFloat(posicao.latitude as string);
+        const lng = typeof posicao.longitude === 'number' ? posicao.longitude : parseFloat(posicao.longitude as string);
+
+        if (!isNaN(lat) && !isNaN(lng)) {
+          const endereco = await reverseGeocode(lat, lng);
+          setReverseGeocodeAddress(endereco);
+        }
+      }
+    };
+
+    obterEnderecoPreciso();
+  }, [posicao]);
+
   if (carregando) {
     return (
       <div className="bg-gray-100 p-4 rounded-lg">
@@ -120,7 +161,7 @@ const VehicleLocation = ({ placa }: VehicleLocationProps) => {
 
   const isMoving = speed > 0;
   const status = isMoving ? 'Em movimento' : 'Parado';
-  const address = posicao.address || 'Endereço não disponível';
+  const address = reverseGeocodeAddress || posicao.address || 'Endereço não disponível';
 
   return (
     <div className="bg-gray-100 p-4 rounded-lg space-y-2">
