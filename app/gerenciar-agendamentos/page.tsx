@@ -3,6 +3,16 @@
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import ProtectedRoute from '../components/ProtectedRoute';
 import SidebarMenu from '../components/SidebarMenu';
+import dynamic from 'next/dynamic';
+
+const VehicleLocation = dynamic(() => import('../components/VehicleLocation'), {
+  ssr: false,
+  loading: () => (
+    <div className="bg-gray-100 p-4 rounded-lg">
+      <p className="text-sm text-gray-600">Carregando mapa...</p>
+    </div>
+  ),
+});
 import { listarVeiculosComStatus } from '@/app/lib/veiculos';
 import { Agendamento, listarAgendamentos } from '@/app/lib/agendamentos';
 import { criarAgendamento, atualizarAgendamento, excluirAgendamento } from '@/app/lib/agendamentos';
@@ -928,6 +938,9 @@ export default function GerenciarAgendamentosPage() {
                                         {status}
                                       </span>
                                     </div>
+                                  </div>
+                                  <div>
+                                    <VehicleLocation placa={getVeiculoPlaca(ag.veiculoId)} />
                                   </div>
                                   <div>
                                     <p className="text-xs font-semibold uppercase text-gray-500">Observações</p>
