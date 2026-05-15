@@ -38,43 +38,14 @@ type ResultadoValidacao = {
   mensagens: string[];
 };
 
-type AgendamentoSimulado = {
+type AlocacaoSimulada = {
   id: string;
   saida: string;
   chegada: string;
   veiculoId: string;
   destino: string;
   motorista: string;
-  original?: Agendamento;
-  novo?: boolean;
 };
-
-type EstadoBusca = {
-  atribuicoes: Record<string, string>;
-};
-
-type ConflitoSimulado = {
-  primeiro: AgendamentoSimulado;
-  segundo: AgendamentoSimulado;
-  veiculoId: string;
-};
-
-type MudancaPlano = {
-  agendamento: Agendamento;
-  veiculoAtualId: string;
-  novoVeiculoId: string;
-};
-
-type PlanoRemanejo = {
-  id: string;
-  novoVeiculoId: string;
-  mudancas: MudancaPlano[];
-  conflitosResolvidos: number;
-};
-
-const NOVO_AGENDAMENTO_ID = '__novo_agendamento__';
-const LIMITE_PLANOS = 8;
-const LIMITE_ESTADOS_BUSCA = 2500;
 
 const novoAgendamentoInicial: NovoAgendamento = {
   saida: '',
@@ -88,6 +59,16 @@ const novoAgendamentoInicial: NovoAgendamento = {
   concluido: false,
   codigo: '',
   nomeAgendador: '',
+};
+
+const itemRemanejoInicial: ItemRemanejo = {
+  agendamentoId: '',
+  novoVeiculoId: '',
+  responsavelConferencia: '',
+  materiaisConferidos: false,
+  chaveDocumentoConferidos: false,
+  motoristaAvisado: false,
+  observacao: '',
 };
 
 const formatarDataHora = (valor: string) => {
@@ -114,23 +95,15 @@ const intervaloSobrepoe = (inicioA: string, fimA: string, inicioB: string, fimB:
   return aFim > bInicio && aInicio < bFim;
 };
 
-const dataValida = (valor: string) => {
-  const data = new Date(valor);
-  return !Number.isNaN(data.getTime());
-};
-
-const ordenarPorSaida = (a: Agendamento, b: Agendamento) =>
-  new Date(a.saida).getTime() - new Date(b.saida).getTime();
-
 export default function RemanejoPage() {
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
   const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
   const [motoristas, setMotoristas] = useState<Motorista[]>([]);
   const [novoAgendamento, setNovoAgendamento] = useState<NovoAgendamento>(novoAgendamentoInicial);
-  const [itensRemanejo, setItensRemanejo] = useState<ItemRemanejo[]>([]);
-  const [planoSelecionadoId, setPlanoSelecionadoId] = useState<string>('');
+  const [itensRemanejo, setItensRemanejo] = useState<ItemRemanejo[]>([{ ...itemRemanejoInicial }]);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  const [somentePeriodo, setSomentePeriodo] = useState(true);
 
   const carregarDados = useCallback(async () => {
     try {
@@ -144,8 +117,7 @@ export default function RemanejoPage() {
       setAgendamentos(
         listaAgendamentos
           .filter((agendamento) => agendamento.concluido !== true)
-          .filter((agendamento) => dataValida(agendamento.saida) && dataValida(agendamento.chegada))
-          .sort(ordenarPorSaida),
+          .sort((a, b) => new Date(a.saida).getTime() - new Date(b.saida).getTime()),
       );
       setVeiculos(listaVeiculos);
       setMotoristas(
@@ -174,11 +146,6 @@ export default function RemanejoPage() {
     [veiculos],
   );
 
-  const agendamentoAindaNaoSaiu = useCallback((agendamento: Agendamento | AgendamentoSimulado) => {
-    const saida = new Date(agendamento.saida).getTime();
-    return dataValida(agendamento.saida) && saida > Date.now();
-  }, []);
-
   const handleMatriculaChange = (matricula: string) => {
     const motoristaEncontrado = motoristas.find((motorista) => motorista.matricula === matricula.trim());
 
@@ -190,28 +157,15 @@ export default function RemanejoPage() {
     }));
   };
 
-  const resetarPlanoSelecionado = () => {
-    setPlanoSelecionadoId('');
-    setItensRemanejo([]);
-  };
-
-  const agendamentosAindaNaoSairam = useMemo(
-    () => agendamentos.filter((agendamento) => agendamentoAindaNaoSaiu(agendamento)),
-    [agendamentoAindaNaoSaiu, agendamentos],
-  );
-
-  const agendamentosEmUsoOuPassados = useMemo(
-    () => agendamentos.filter((agendamento) => !agendamentoAindaNaoSaiu(agendamento)),
-    [agendamentoAindaNaoSaiu, agendamentos],
-  );
-
   const agendamentosNoPeriodo = useMemo(() => {
-    if (!novoAgendamento.saida || !novoAgendamento.chegada) return [];
+    if (!novoAgendamento.saida || !novoAgendamento.chegada) return agendamentos;
 
     return agendamentos.filter((agendamento) =>
       intervaloSobrepoe(agendamento.saida, agendamento.chegada, novoAgendamento.saida, novoAgendamento.chegada),
     );
   }, [agendamentos, novoAgendamento.chegada, novoAgendamento.saida]);
+
+  const agendamentosParaSelecao = somentePeriodo ? agendamentosNoPeriodo : agendamentos;
 
   const agendamentosConflitantes = useMemo(() => {
     if (!novoAgendamento.veiculoId || !novoAgendamento.saida || !novoAgendamento.chegada) return [];
@@ -225,217 +179,25 @@ export default function RemanejoPage() {
 
   const veiculosComDiagnostico = useMemo(() => {
     if (!novoAgendamento.saida || !novoAgendamento.chegada) {
-      return veiculos.map((veiculo) => ({ veiculo, conflitos: [] as Agendamento[], bloqueiosFixos: [] as Agendamento[] }));
+      return veiculos.map((veiculo) => ({ veiculo, conflitos: [] as Agendamento[] }));
     }
 
-    return veiculos.map((veiculo) => {
-      const conflitos = agendamentos.filter(
+    return veiculos.map((veiculo) => ({
+      veiculo,
+      conflitos: agendamentos.filter(
         (agendamento) =>
           agendamento.veiculoId === veiculo.id &&
           intervaloSobrepoe(agendamento.saida, agendamento.chegada, novoAgendamento.saida, novoAgendamento.chegada),
-      );
-
-      return {
-        veiculo,
-        conflitos,
-        bloqueiosFixos: conflitos.filter((agendamento) => !agendamentoAindaNaoSaiu(agendamento)),
-      };
-    });
-  }, [agendamentoAindaNaoSaiu, agendamentos, novoAgendamento.chegada, novoAgendamento.saida, veiculos]);
-
-  const montarItensSimulados = useCallback((): AgendamentoSimulado[] => {
-    if (!novoAgendamento.saida || !novoAgendamento.chegada) return [];
-
-    const existentes = agendamentos.map((agendamento) => ({
-      id: agendamento.id,
-      saida: agendamento.saida,
-      chegada: agendamento.chegada,
-      veiculoId: agendamento.veiculoId,
-      destino: agendamento.destino,
-      motorista: agendamento.motorista,
-      original: agendamento,
+      ),
     }));
-
-    return [
-      ...existentes,
-      {
-        id: NOVO_AGENDAMENTO_ID,
-        saida: novoAgendamento.saida,
-        chegada: novoAgendamento.chegada,
-        veiculoId: novoAgendamento.veiculoId,
-        destino: novoAgendamento.destino || 'Novo agendamento',
-        motorista: novoAgendamento.motorista,
-        novo: true,
-      },
-    ];
-  }, [agendamentos, novoAgendamento]);
-
-  const encontrarConflito = useCallback(
-    (itens: AgendamentoSimulado[], estado: EstadoBusca): ConflitoSimulado | null => {
-      const veiculoAtual = (item: AgendamentoSimulado) => estado.atribuicoes[item.id] || item.veiculoId;
-      const foiAlterado = (item: AgendamentoSimulado) =>
-        item.id === NOVO_AGENDAMENTO_ID || Boolean(estado.atribuicoes[item.id] && estado.atribuicoes[item.id] !== item.veiculoId);
-
-      for (let i = 0; i < itens.length; i += 1) {
-        for (let j = i + 1; j < itens.length; j += 1) {
-          const primeiro = itens[i];
-          const segundo = itens[j];
-          const primeiroVeiculo = veiculoAtual(primeiro);
-          const segundoVeiculo = veiculoAtual(segundo);
-
-          if (
-            primeiroVeiculo &&
-            primeiroVeiculo === segundoVeiculo &&
-            intervaloSobrepoe(primeiro.saida, primeiro.chegada, segundo.saida, segundo.chegada) &&
-            (foiAlterado(primeiro) || foiAlterado(segundo))
-          ) {
-            return { primeiro, segundo, veiculoId: primeiroVeiculo };
-          }
-        }
-      }
-
-      return null;
-    },
-    [],
-  );
-
-  const gerarPlanosParaVeiculo = useCallback(
-    (novoVeiculoId: string): PlanoRemanejo[] => {
-      const itens = montarItensSimulados();
-      if (!itens.length) return [];
-
-      const fila: EstadoBusca[] = [{ atribuicoes: { [NOVO_AGENDAMENTO_ID]: novoVeiculoId } }];
-      const visitados = new Set<string>();
-      const planos: PlanoRemanejo[] = [];
-      const veiculoIds = veiculos.map((veiculo) => veiculo.id);
-      let estadosAnalisados = 0;
-
-      const assinaturaEstado = (estado: EstadoBusca) =>
-        Object.entries(estado.atribuicoes)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([id, veiculoId]) => `${id}:${veiculoId}`)
-          .join('|');
-
-      const criarPlano = (estado: EstadoBusca): PlanoRemanejo => {
-        const mudancas = agendamentos
-          .filter((agendamento) => estado.atribuicoes[agendamento.id] && estado.atribuicoes[agendamento.id] !== agendamento.veiculoId)
-          .map((agendamento) => ({
-            agendamento,
-            veiculoAtualId: agendamento.veiculoId,
-            novoVeiculoId: estado.atribuicoes[agendamento.id],
-          }))
-          .sort((a, b) => new Date(a.agendamento.saida).getTime() - new Date(b.agendamento.saida).getTime());
-
-        return {
-          id: `${novoVeiculoId}-${mudancas.map((mudanca) => `${mudanca.agendamento.id}:${mudanca.novoVeiculoId}`).join('-') || 'direto'}`,
-          novoVeiculoId,
-          mudancas,
-          conflitosResolvidos: mudancas.length,
-        };
-      };
-
-      while (fila.length > 0 && planos.length < LIMITE_PLANOS && estadosAnalisados < LIMITE_ESTADOS_BUSCA) {
-        const estado = fila.shift()!;
-        const assinatura = assinaturaEstado(estado);
-        if (visitados.has(assinatura)) continue;
-        visitados.add(assinatura);
-        estadosAnalisados += 1;
-
-        const conflito = encontrarConflito(itens, estado);
-        if (!conflito) {
-          planos.push(criarPlano(estado));
-          continue;
-        }
-
-        const candidatos = [conflito.primeiro, conflito.segundo].filter(
-          (item) => item.id !== NOVO_AGENDAMENTO_ID && item.original && agendamentoAindaNaoSaiu(item),
-        );
-
-        candidatos.forEach((candidato) => {
-          const veiculoAtual = estado.atribuicoes[candidato.id] || candidato.veiculoId;
-          veiculoIds
-            .filter((veiculoId) => veiculoId !== veiculoAtual)
-            .forEach((veiculoId) => {
-              fila.push({
-                atribuicoes: {
-                  ...estado.atribuicoes,
-                  [candidato.id]: veiculoId,
-                },
-              });
-            });
-        });
-      }
-
-      return planos;
-    },
-    [agendamentoAindaNaoSaiu, agendamentos, encontrarConflito, montarItensSimulados, veiculos],
-  );
-
-  const planosSugeridos = useMemo(() => {
-    if (!novoAgendamento.saida || !novoAgendamento.chegada || !dataValida(novoAgendamento.saida) || !dataValida(novoAgendamento.chegada)) {
-      return [];
-    }
-
-    const saida = new Date(novoAgendamento.saida).getTime();
-    const chegada = new Date(novoAgendamento.chegada).getTime();
-    if (saida >= chegada) return [];
-
-    const veiculosParaTentar = novoAgendamento.veiculoId
-      ? veiculos.filter((veiculo) => veiculo.id === novoAgendamento.veiculoId)
-      : veiculos;
-
-    const planos = veiculosParaTentar.flatMap((veiculo) => gerarPlanosParaVeiculo(veiculo.id));
-    const unicos = new Map<string, PlanoRemanejo>();
-
-    planos.forEach((plano) => {
-      if (!unicos.has(plano.id)) {
-        unicos.set(plano.id, plano);
-      }
-    });
-
-    return [...unicos.values()]
-      .sort((a, b) => {
-        if (a.mudancas.length !== b.mudancas.length) return a.mudancas.length - b.mudancas.length;
-        return getVeiculoNome(a.novoVeiculoId).localeCompare(getVeiculoNome(b.novoVeiculoId));
-      })
-      .slice(0, LIMITE_PLANOS);
-  }, [gerarPlanosParaVeiculo, getVeiculoNome, novoAgendamento.chegada, novoAgendamento.saida, novoAgendamento.veiculoId, veiculos]);
-
-  useEffect(() => {
-    resetarPlanoSelecionado();
-  }, [novoAgendamento.saida, novoAgendamento.chegada, novoAgendamento.veiculoId]);
-
-  const planoSelecionado = useMemo(
-    () => planosSugeridos.find((plano) => plano.id === planoSelecionadoId),
-    [planoSelecionadoId, planosSugeridos],
-  );
-
-  const selecionarPlano = (plano: PlanoRemanejo) => {
-    setPlanoSelecionadoId(plano.id);
-    setItensRemanejo(
-      plano.mudancas.map((mudanca) => ({
-        agendamentoId: mudanca.agendamento.id,
-        novoVeiculoId: mudanca.novoVeiculoId,
-        responsavelConferencia: '',
-        materiaisConferidos: false,
-        chaveDocumentoConferidos: false,
-        motoristaAvisado: false,
-        observacao: '',
-      })),
-    );
-  };
-
-  const atualizarItemRemanejo = <K extends keyof ItemRemanejo>(indice: number, campo: K, valor: ItemRemanejo[K]) => {
-    setItensRemanejo((atual) =>
-      atual.map((item, itemIndice) => (itemIndice === indice ? { ...item, [campo]: valor } : item)),
-    );
-  };
+  }, [agendamentos, novoAgendamento.chegada, novoAgendamento.saida, veiculos]);
 
   const validarPlano = useCallback((): ResultadoValidacao => {
     const mensagens: string[] = [];
 
     if (!novoAgendamento.saida) mensagens.push('Informe a saída do novo agendamento.');
     if (!novoAgendamento.chegada) mensagens.push('Informe o retorno do novo agendamento.');
+    if (!novoAgendamento.veiculoId) mensagens.push('Escolha o veículo que atenderá o novo agendamento.');
     if (!novoAgendamento.motorista) mensagens.push('Informe uma matrícula válida para preencher o motorista.');
     if (!novoAgendamento.destino) mensagens.push('Informe o destino do novo agendamento.');
 
@@ -447,41 +209,101 @@ export default function RemanejoPage() {
       }
     }
 
-    if (!planoSelecionado) {
-      mensagens.push('Selecione uma possibilidade de remanejo gerada pelo sistema.');
-    }
+    const remanejosValidos = itensRemanejo.filter((item) => item.agendamentoId || item.novoVeiculoId);
+    const idsRemanejados = new Set<string>();
 
-    itensRemanejo.forEach((item, indice) => {
+    remanejosValidos.forEach((item, indice) => {
       const numero = indice + 1;
       const agendamento = agendamentos.find((ag) => ag.id === item.agendamentoId);
 
-      if (!agendamento) mensagens.push(`Linha ${numero}: agendamento de remanejo não encontrado.`);
-      if (agendamento && !agendamentoAindaNaoSaiu(agendamento)) {
-        mensagens.push(`Linha ${numero}: este agendamento já saiu da unidade e não pode ser remanejado.`);
-      }
+      if (!item.agendamentoId) mensagens.push(`Linha ${numero}: selecione o agendamento que será remanejado.`);
+      if (!item.novoVeiculoId) mensagens.push(`Linha ${numero}: selecione o novo veículo do agendamento remanejado.`);
       if (!item.responsavelConferencia.trim()) mensagens.push(`Linha ${numero}: informe quem conferiu materiais/documentos.`);
       if (!item.materiaisConferidos) mensagens.push(`Linha ${numero}: confirme a transferência dos materiais.`);
       if (!item.chaveDocumentoConferidos) mensagens.push(`Linha ${numero}: confirme chave, documento e itens obrigatórios.`);
       if (!item.motoristaAvisado) mensagens.push(`Linha ${numero}: confirme que o motorista foi avisado da troca.`);
+      if (item.agendamentoId && idsRemanejados.has(item.agendamentoId)) {
+        mensagens.push(`Linha ${numero}: o mesmo agendamento foi escolhido mais de uma vez.`);
+      }
+      if (item.agendamentoId) idsRemanejados.add(item.agendamentoId);
+      if (agendamento && item.novoVeiculoId === agendamento.veiculoId) {
+        mensagens.push(`Linha ${numero}: escolha um veículo diferente do veículo atual.`);
+      }
     });
 
+    const alocacoes: AlocacaoSimulada[] = agendamentos.map((agendamento) => {
+      const remanejo = remanejosValidos.find((item) => item.agendamentoId === agendamento.id);
+      return {
+        id: agendamento.id,
+        saida: agendamento.saida,
+        chegada: agendamento.chegada,
+        veiculoId: remanejo?.novoVeiculoId || agendamento.veiculoId,
+        destino: agendamento.destino,
+        motorista: agendamento.motorista,
+      };
+    });
+
+    if (novoAgendamento.saida && novoAgendamento.chegada && novoAgendamento.veiculoId) {
+      alocacoes.push({
+        id: 'novo-agendamento',
+        saida: novoAgendamento.saida,
+        chegada: novoAgendamento.chegada,
+        veiculoId: novoAgendamento.veiculoId,
+        destino: novoAgendamento.destino,
+        motorista: novoAgendamento.motorista,
+      });
+    }
+
+    for (let i = 0; i < alocacoes.length; i += 1) {
+      for (let j = i + 1; j < alocacoes.length; j += 1) {
+        const atual = alocacoes[i];
+        const comparado = alocacoes[j];
+
+        if (
+          atual.veiculoId &&
+          atual.veiculoId === comparado.veiculoId &&
+          intervaloSobrepoe(atual.saida, atual.chegada, comparado.saida, comparado.chegada)
+        ) {
+          mensagens.push(
+            `Conflito no plano: ${getVeiculoNome(atual.veiculoId)} ficaria em dois agendamentos ao mesmo tempo (${atual.destino || atual.motorista} x ${comparado.destino || comparado.motorista}).`,
+          );
+        }
+      }
+    }
+
     return { ok: mensagens.length === 0, mensagens };
-  }, [agendamentoAindaNaoSaiu, agendamentos, itensRemanejo, novoAgendamento, planoSelecionado]);
+  }, [agendamentos, getVeiculoNome, itensRemanejo, novoAgendamento]);
 
   const resultadoValidacao = useMemo(() => validarPlano(), [validarPlano]);
 
+  const adicionarLinhaRemanejo = () => {
+    setItensRemanejo((atual) => [...atual, { ...itemRemanejoInicial }]);
+  };
+
+  const removerLinhaRemanejo = (indice: number) => {
+    setItensRemanejo((atual) => atual.filter((_, itemIndice) => itemIndice !== indice));
+  };
+
+  const atualizarItemRemanejo = <K extends keyof ItemRemanejo>(indice: number, campo: K, valor: ItemRemanejo[K]) => {
+    setItensRemanejo((atual) =>
+      atual.map((item, itemIndice) => (itemIndice === indice ? { ...item, [campo]: valor } : item)),
+    );
+  };
+
   const aplicarPlano = async () => {
     const validacao = validarPlano();
-    if (!validacao.ok || !planoSelecionado) {
+    if (!validacao.ok) {
       toast.error('Revise o plano de remanejo antes de aplicar.');
       return;
     }
+
+    const remanejosValidos = itensRemanejo.filter((item) => item.agendamentoId && item.novoVeiculoId);
 
     try {
       setSalvando(true);
 
       await Promise.all(
-        itensRemanejo.map((item) => {
+        remanejosValidos.map((item) => {
           const agendamento = agendamentos.find((ag) => ag.id === item.agendamentoId);
           const observacaoRemanejo = [
             agendamento?.observacoes || '',
@@ -503,13 +325,12 @@ export default function RemanejoPage() {
 
       await criarAgendamento({
         ...novoAgendamento,
-        veiculoId: planoSelecionado.novoVeiculoId,
         observacoes: [
           novoAgendamento.observacoes,
           `Criado pela tela de REMANEJO em ${new Date().toLocaleString('pt-BR')}.`,
-          itensRemanejo.length > 0
-            ? `Remanejos vinculados: ${itensRemanejo.map((item) => item.agendamentoId).join(', ')}.`
-            : 'Encaixe direto sem remanejar agendamentos.',
+          remanejosValidos.length > 0
+            ? `Remanejos vinculados: ${remanejosValidos.map((item) => item.agendamentoId).join(', ')}.`
+            : 'Sem remanejos necessários.',
         ]
           .filter(Boolean)
           .join('\n'),
@@ -517,7 +338,7 @@ export default function RemanejoPage() {
 
       toast.success('Plano de remanejo aplicado e novo agendamento criado.');
       setNovoAgendamento(novoAgendamentoInicial);
-      resetarPlanoSelecionado();
+      setItensRemanejo([{ ...itemRemanejoInicial }]);
       await carregarDados();
     } catch (error) {
       console.error('Erro ao aplicar plano de remanejo:', error);
@@ -537,10 +358,10 @@ export default function RemanejoPage() {
           <div className="max-w-7xl mx-auto space-y-6">
             <header className="rounded-2xl bg-gradient-to-r from-amber-600 to-orange-600 p-6 text-white shadow-lg">
               <p className="text-sm font-semibold uppercase tracking-[0.25em] text-amber-100">REMANEJO</p>
-              <h1 className="mt-2 text-3xl font-bold">Central de encaixe automático e troca segura</h1>
+              <h1 className="mt-2 text-3xl font-bold">Central de encaixe e troca segura de veículos</h1>
               <p className="mt-3 max-w-4xl text-amber-50">
-                Informe a nova demanda e o sistema calcula as possibilidades, inclusive remanejos em cadeia.
-                Apenas agendamentos que ainda não saíram da unidade podem ser movidos.
+                Monte o plano antes de trocar um carro: veja conflitos, escolha quem será realocado,
+                confirme materiais/documentos e registre a mudança para evitar saídas sem equipamentos.
               </p>
             </header>
 
@@ -554,26 +375,28 @@ export default function RemanejoPage() {
                     <p className="mt-2 text-3xl font-bold text-gray-900">{veiculos.length}</p>
                   </div>
                   <div className="rounded-xl bg-white p-5 shadow-sm border border-gray-100">
-                    <p className="text-sm text-gray-500">Podem ser remanejados</p>
-                    <p className="mt-2 text-3xl font-bold text-green-700">{agendamentosAindaNaoSairam.length}</p>
+                    <p className="text-sm text-gray-500">Agendamentos ativos</p>
+                    <p className="mt-2 text-3xl font-bold text-gray-900">{agendamentos.length}</p>
                   </div>
                   <div className="rounded-xl bg-white p-5 shadow-sm border border-gray-100">
-                    <p className="text-sm text-gray-500">Não podem ser movidos</p>
-                    <p className="mt-2 text-3xl font-bold text-red-600">{agendamentosEmUsoOuPassados.length}</p>
+                    <p className="text-sm text-gray-500">Conflitos no veículo escolhido</p>
+                    <p className={`mt-2 text-3xl font-bold ${agendamentosConflitantes.length ? 'text-red-600' : 'text-green-700'}`}>
+                      {agendamentosConflitantes.length}
+                    </p>
                   </div>
                   <div className="rounded-xl bg-white p-5 shadow-sm border border-gray-100">
-                    <p className="text-sm text-gray-500">Possibilidades encontradas</p>
-                    <p className={`mt-2 text-3xl font-bold ${planosSugeridos.length ? 'text-green-700' : 'text-amber-700'}`}>
-                      {planosSugeridos.length}
+                    <p className="text-sm text-gray-500">Status do plano</p>
+                    <p className={`mt-2 text-lg font-bold ${resultadoValidacao.ok ? 'text-green-700' : 'text-amber-700'}`}>
+                      {resultadoValidacao.ok ? 'Pronto para aplicar' : 'Pendente de revisão'}
                     </p>
                   </div>
                 </section>
 
                 <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.05fr_0.95fr]">
                   <div className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-                    <h2 className="text-xl font-bold text-gray-900">1. Nova demanda prioritária</h2>
+                    <h2 className="text-xl font-bold text-gray-900">1. Novo agendamento prioritário</h2>
                     <p className="mt-1 text-sm text-gray-600">
-                      O veículo preferencial é opcional. Se ficar em branco, o sistema testa todos os veículos disponíveis para encontrar encaixes.
+                      Use esta área para cadastrar a demanda que precisa ser encaixada, como deslocamentos de gerente.
                     </p>
 
                     <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -596,16 +419,16 @@ export default function RemanejoPage() {
                         />
                       </label>
                       <label className="block md:col-span-2">
-                        <span className="text-sm font-medium text-gray-700">Veículo preferencial (opcional)</span>
+                        <span className="text-sm font-medium text-gray-700">Veículo que atenderá a nova demanda</span>
                         <select
                           value={novoAgendamento.veiculoId}
                           onChange={(event) => setNovoAgendamento((atual) => ({ ...atual, veiculoId: event.target.value }))}
                           className="mt-1 w-full rounded-lg border border-gray-300 p-3 focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
                         >
-                          <option value="">Deixar o sistema escolher a melhor possibilidade</option>
-                          {veiculosComDiagnostico.map(({ veiculo, conflitos, bloqueiosFixos }) => (
+                          <option value="">Selecione o veículo</option>
+                          {veiculosComDiagnostico.map(({ veiculo, conflitos }) => (
                             <option key={veiculo.id} value={veiculo.id}>
-                              {veiculo.modelo} - {veiculo.placa} {conflitos.length ? `(${conflitos.length} conflito(s), ${bloqueiosFixos.length} sem remanejo)` : '(livre no período)'}
+                              {veiculo.modelo} - {veiculo.placa} {conflitos.length ? `(${conflitos.length} conflito(s))` : '(livre no período)'}
                             </option>
                           ))}
                         </select>
@@ -674,36 +497,28 @@ export default function RemanejoPage() {
                   </div>
 
                   <div className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-                    <h2 className="text-xl font-bold text-gray-900">2. Diagnóstico do período</h2>
+                    <h2 className="text-xl font-bold text-gray-900">2. Diagnóstico de disponibilidade</h2>
                     <p className="mt-1 text-sm text-gray-600">
-                      Agendamentos já iniciados bloqueiam o veículo e não entram nas possibilidades de troca.
+                      Confira quais veículos já estão comprometidos no período escolhido antes de montar o remanejo.
                     </p>
 
                     <div className="mt-4 max-h-[560px] space-y-3 overflow-y-auto pr-1">
-                      {veiculosComDiagnostico.map(({ veiculo, conflitos, bloqueiosFixos }) => (
+                      {veiculosComDiagnostico.map(({ veiculo, conflitos }) => (
                         <div
                           key={veiculo.id}
                           className={`rounded-xl border p-4 ${
-                            bloqueiosFixos.length
-                              ? 'border-red-200 bg-red-50'
-                              : conflitos.length
-                                ? 'border-amber-200 bg-amber-50'
-                                : 'border-green-200 bg-green-50'
+                            conflitos.length ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'
                           }`}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-semibold text-gray-900">{veiculo.modelo} - {veiculo.placa}</p>
-                              <p className={`text-sm font-medium ${bloqueiosFixos.length ? 'text-red-700' : conflitos.length ? 'text-amber-700' : 'text-green-700'}`}>
-                                {bloqueiosFixos.length
-                                  ? 'Bloqueado por uso já iniciado'
-                                  : conflitos.length
-                                    ? 'Pode exigir remanejo'
-                                    : 'Livre no período informado'}
+                              <p className={`text-sm font-medium ${conflitos.length ? 'text-red-700' : 'text-green-700'}`}>
+                                {conflitos.length ? `${conflitos.length} agendamento(s) no período` : 'Livre no período informado'}
                               </p>
                             </div>
-                            <span className={`rounded-full px-3 py-1 text-xs font-bold ${bloqueiosFixos.length ? 'bg-red-100 text-red-700' : conflitos.length ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-                              {conflitos.length} conflito(s)
+                            <span className={`rounded-full px-3 py-1 text-xs font-bold ${conflitos.length ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                              {conflitos.length ? 'Ocupado' : 'Disponível'}
                             </span>
                           </div>
                           {conflitos.length > 0 && (
@@ -713,11 +528,6 @@ export default function RemanejoPage() {
                                   <p className="font-semibold text-gray-900">{agendamento.destino}</p>
                                   <p>{formatarDataHora(agendamento.saida)} até {formatarDataHora(agendamento.chegada)}</p>
                                   <p>Motorista: {agendamento.motorista || '-'}</p>
-                                  <p className={agendamentoAindaNaoSaiu(agendamento) ? 'text-green-700' : 'text-red-700'}>
-                                    {agendamentoAindaNaoSaiu(agendamento)
-                                      ? 'Ainda não saiu: pode entrar no remanejo'
-                                      : 'Já saiu/está em uso: não pode ser remanejado'}
-                                  </p>
                                 </div>
                               ))}
                             </div>
@@ -729,161 +539,156 @@ export default function RemanejoPage() {
                 </section>
 
                 <section className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-                  <h2 className="text-xl font-bold text-gray-900">3. Possibilidades calculadas pelo sistema</h2>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Selecione uma opção. O sistema pode sugerir encaixe direto ou uma cadeia de remanejos até todos os horários fecharem sem conflito.
-                  </p>
-
-                  {!novoAgendamento.saida || !novoAgendamento.chegada ? (
-                    <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-gray-600">
-                      Informe saída e retorno para gerar as possibilidades.
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-900">3. Plano de remanejo com conferência obrigatória</h2>
+                      <p className="mt-1 text-sm text-gray-600">
+                        Cada linha troca o veículo de um agendamento existente. A aplicação só é liberada após confirmar materiais,
+                        chave/documentos e aviso ao motorista.
+                      </p>
                     </div>
-                  ) : planosSugeridos.length === 0 ? (
-                    <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">
-                      Nenhuma possibilidade foi encontrada para o período informado respeitando a regra de não mover veículos que já saíram da unidade.
-                    </div>
-                  ) : (
-                    <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                      {planosSugeridos.map((plano, indice) => {
-                        const selecionado = plano.id === planoSelecionadoId;
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={somentePeriodo}
+                        onChange={(event) => setSomentePeriodo(event.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                      />
+                      Mostrar somente agendamentos do período
+                    </label>
+                  </div>
 
-                        return (
-                          <div
-                            key={plano.id}
-                            className={`rounded-xl border p-4 transition ${selecionado ? 'border-amber-500 bg-amber-50 shadow-md' : 'border-gray-200 bg-white shadow-sm'}`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">Opção {indice + 1}</p>
-                                <h3 className="mt-1 text-lg font-bold text-gray-900">Novo agendamento em {getVeiculoNome(plano.novoVeiculoId)}</h3>
-                                <p className="mt-1 text-sm text-gray-600">
-                                  {plano.mudancas.length === 0
-                                    ? 'Encaixe direto, sem trocar agendamentos existentes.'
-                                    : `${plano.mudancas.length} remanejo(s) em cadeia.`}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => selecionarPlano(plano)}
-                                className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${selecionado ? 'bg-amber-700 text-white' : 'bg-gray-900 text-white hover:bg-gray-700'}`}
+                  <div className="mt-5 space-y-5">
+                    {itensRemanejo.map((item, indice) => {
+                      const agendamentoSelecionado = agendamentos.find((agendamento) => agendamento.id === item.agendamentoId);
+
+                      return (
+                        <div key={indice} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                            <label className="block">
+                              <span className="text-sm font-medium text-gray-700">Agendamento que será remanejado</span>
+                              <select
+                                value={item.agendamentoId}
+                                onChange={(event) => atualizarItemRemanejo(indice, 'agendamentoId', event.target.value)}
+                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-3 focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
                               >
-                                {selecionado ? 'Selecionado' : 'Selecionar'}
-                              </button>
-                            </div>
-
-                            {plano.mudancas.length > 0 && (
-                              <div className="mt-4 space-y-2">
-                                {plano.mudancas.map((mudanca, mudancaIndice) => (
-                                  <div key={`${mudanca.agendamento.id}-${mudanca.novoVeiculoId}`} className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
-                                    <p className="font-semibold text-gray-900">
-                                      {mudancaIndice + 1}. {mudanca.agendamento.destino}
-                                    </p>
-                                    <p>{formatarDataHora(mudanca.agendamento.saida)} até {formatarDataHora(mudanca.agendamento.chegada)}</p>
-                                    <p>De: {getVeiculoNome(mudanca.veiculoAtualId)}</p>
-                                    <p>Para: {getVeiculoNome(mudanca.novoVeiculoId)}</p>
-                                  </div>
+                                <option value="">Selecione o agendamento</option>
+                                {agendamentosParaSelecao.map((agendamento) => (
+                                  <option key={agendamento.id} value={agendamento.id}>
+                                    {formatarDataHora(agendamento.saida)} | {getVeiculoNome(agendamento.veiculoId)} | {agendamento.destino}
+                                  </option>
                                 ))}
-                              </div>
-                            )}
+                              </select>
+                            </label>
+                            <label className="block">
+                              <span className="text-sm font-medium text-gray-700">Novo veículo para este agendamento</span>
+                              <select
+                                value={item.novoVeiculoId}
+                                onChange={(event) => atualizarItemRemanejo(indice, 'novoVeiculoId', event.target.value)}
+                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-3 focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                              >
+                                <option value="">Selecione o novo veículo</option>
+                                {veiculos.map((veiculo) => (
+                                  <option key={veiculo.id} value={veiculo.id}>
+                                    {veiculo.modelo} - {veiculo.placa}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+
+                          {agendamentoSelecionado && (
+                            <div className="mt-4 rounded-lg bg-white p-4 text-sm text-gray-700 shadow-sm">
+                              <p className="font-semibold text-gray-900">Agendamento original</p>
+                              <p>Veículo atual: {getVeiculoNome(agendamentoSelecionado.veiculoId)}</p>
+                              <p>Destino: {agendamentoSelecionado.destino}</p>
+                              <p>Motorista: {agendamentoSelecionado.motorista || '-'}</p>
+                              <p>Período: {formatarDataHora(agendamentoSelecionado.saida)} até {formatarDataHora(agendamentoSelecionado.chegada)}</p>
+                            </div>
+                          )}
+
+                          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1.3fr]">
+                            <label className="block">
+                              <span className="text-sm font-medium text-gray-700">Responsável pela conferência</span>
+                              <input
+                                type="text"
+                                value={item.responsavelConferencia}
+                                onChange={(event) => atualizarItemRemanejo(indice, 'responsavelConferencia', event.target.value)}
+                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-3 focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                                placeholder="Nome de quem conferiu a transferência"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="text-sm font-medium text-gray-700">Observação da troca</span>
+                              <input
+                                type="text"
+                                value={item.observacao}
+                                onChange={(event) => atualizarItemRemanejo(indice, 'observacao', event.target.value)}
+                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-3 focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                                placeholder="Ex.: materiais transferidos para o porta-malas do novo carro"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                            <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-gray-800">
+                              <input
+                                type="checkbox"
+                                checked={item.materiaisConferidos}
+                                onChange={(event) => atualizarItemRemanejo(indice, 'materiaisConferidos', event.target.checked)}
+                                className="mt-1 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                              />
+                              Materiais, ferramentas, amostras e documentos da viagem foram transferidos.
+                            </label>
+                            <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-gray-800">
+                              <input
+                                type="checkbox"
+                                checked={item.chaveDocumentoConferidos}
+                                onChange={(event) => atualizarItemRemanejo(indice, 'chaveDocumentoConferidos', event.target.checked)}
+                                className="mt-1 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                              />
+                              Chave, documento, cartão/combustível e itens obrigatórios foram conferidos.
+                            </label>
+                            <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-gray-800">
+                              <input
+                                type="checkbox"
+                                checked={item.motoristaAvisado}
+                                onChange={(event) => atualizarItemRemanejo(indice, 'motoristaAvisado', event.target.checked)}
+                                className="mt-1 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                              />
+                              Motorista e solicitante foram avisados sobre veículo, placa e horário.
+                            </label>
+                          </div>
+
+                          <div className="mt-4 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => removerLinhaRemanejo(indice)}
+                              disabled={itensRemanejo.length === 1}
+                              className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              Remover linha
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={adicionarLinhaRemanejo}
+                    className="mt-5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-700"
+                  >
+                    + Adicionar outro remanejo
+                  </button>
                 </section>
 
                 <section className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-                  <h2 className="text-xl font-bold text-gray-900">4. Conferência obrigatória do plano selecionado</h2>
-                  {!planoSelecionado ? (
-                    <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-gray-600">
-                      Selecione uma possibilidade acima para liberar a conferência.
-                    </div>
-                  ) : itensRemanejo.length === 0 ? (
-                    <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4 text-green-800">
-                      A opção selecionada não troca nenhum agendamento existente. Você pode aplicar o encaixe direto após revisar os dados.
-                    </div>
-                  ) : (
-                    <div className="mt-5 space-y-5">
-                      {itensRemanejo.map((item, indice) => {
-                        const agendamentoSelecionado = agendamentos.find((agendamento) => agendamento.id === item.agendamentoId);
-
-                        return (
-                          <div key={item.agendamentoId} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                            {agendamentoSelecionado && (
-                              <div className="rounded-lg bg-white p-4 text-sm text-gray-700 shadow-sm">
-                                <p className="font-semibold text-gray-900">Remanejo {indice + 1}</p>
-                                <p>Destino: {agendamentoSelecionado.destino}</p>
-                                <p>Motorista: {agendamentoSelecionado.motorista || '-'}</p>
-                                <p>Período: {formatarDataHora(agendamentoSelecionado.saida)} até {formatarDataHora(agendamentoSelecionado.chegada)}</p>
-                                <p>De: {getVeiculoNome(agendamentoSelecionado.veiculoId)}</p>
-                                <p>Para: {getVeiculoNome(item.novoVeiculoId)}</p>
-                              </div>
-                            )}
-
-                            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1.3fr]">
-                              <label className="block">
-                                <span className="text-sm font-medium text-gray-700">Responsável pela conferência</span>
-                                <input
-                                  type="text"
-                                  value={item.responsavelConferencia}
-                                  onChange={(event) => atualizarItemRemanejo(indice, 'responsavelConferencia', event.target.value)}
-                                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-3 focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
-                                  placeholder="Nome de quem conferiu a transferência"
-                                />
-                              </label>
-                              <label className="block">
-                                <span className="text-sm font-medium text-gray-700">Observação da troca</span>
-                                <input
-                                  type="text"
-                                  value={item.observacao}
-                                  onChange={(event) => atualizarItemRemanejo(indice, 'observacao', event.target.value)}
-                                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-3 focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
-                                  placeholder="Ex.: materiais transferidos para o porta-malas do novo carro"
-                                />
-                              </label>
-                            </div>
-
-                            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                              <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-gray-800">
-                                <input
-                                  type="checkbox"
-                                  checked={item.materiaisConferidos}
-                                  onChange={(event) => atualizarItemRemanejo(indice, 'materiaisConferidos', event.target.checked)}
-                                  className="mt-1 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                                />
-                                Materiais, ferramentas, amostras e documentos da viagem foram transferidos.
-                              </label>
-                              <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-gray-800">
-                                <input
-                                  type="checkbox"
-                                  checked={item.chaveDocumentoConferidos}
-                                  onChange={(event) => atualizarItemRemanejo(indice, 'chaveDocumentoConferidos', event.target.checked)}
-                                  className="mt-1 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                                />
-                                Chave, documento, cartão/combustível e itens obrigatórios foram conferidos.
-                              </label>
-                              <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-gray-800">
-                                <input
-                                  type="checkbox"
-                                  checked={item.motoristaAvisado}
-                                  onChange={(event) => atualizarItemRemanejo(indice, 'motoristaAvisado', event.target.checked)}
-                                  className="mt-1 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                                />
-                                Motorista e solicitante foram avisados sobre veículo, placa e horário.
-                              </label>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-
-                <section className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-                  <h2 className="text-xl font-bold text-gray-900">5. Revisão e aplicação</h2>
+                  <h2 className="text-xl font-bold text-gray-900">4. Revisão e aplicação</h2>
                   {resultadoValidacao.ok ? (
                     <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4 text-green-800">
-                      Plano validado. Ao aplicar, o sistema atualiza os remanejos selecionados e cria a nova demanda no veículo definido pela opção escolhida.
+                      Plano validado sem conflitos. Ao aplicar, o sistema atualiza os agendamentos remanejados e cria a nova demanda.
                     </div>
                   ) : (
                     <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -902,7 +707,7 @@ export default function RemanejoPage() {
                       type="button"
                       onClick={() => {
                         setNovoAgendamento(novoAgendamentoInicial);
-                        resetarPlanoSelecionado();
+                        setItensRemanejo([{ ...itemRemanejoInicial }]);
                       }}
                       className="rounded-lg border border-gray-300 px-5 py-3 font-semibold text-gray-700 transition hover:bg-gray-100"
                     >
