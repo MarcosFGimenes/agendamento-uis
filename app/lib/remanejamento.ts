@@ -1,5 +1,5 @@
-import { Agendamento } from '@/app/lib/agendamentos';
-import { Veiculo } from '@/app/lib/veiculos';
+import type { Agendamento } from '@/app/lib/agendamentos';
+import type { Veiculo } from '@/app/lib/veiculos';
 
 export type MovimentoRemanejamento = {
   agendamentoId: string;
@@ -119,10 +119,16 @@ export function gerarPlanosRemanejamento({
         mesmoIntervaloConflitante(agendamento, intervalo),
     );
 
-  const resolverConflitos = (estado: EstadoBusca, veiculoId: string, intervalo: Intervalo, profundidade: number): EstadoBusca[] => {
+  const resolverConflitos = (
+    estado: EstadoBusca,
+    veiculoId: string,
+    intervalo: Intervalo,
+    profundidade: number,
+    ignorarId?: string,
+  ): EstadoBusca[] => {
     if (profundidade > profundidadeMaxima || planos.size >= limitePlanos) return [];
 
-    const conflitos = conflitosNoVeiculo(estado, veiculoId, intervalo);
+    const conflitos = conflitosNoVeiculo(estado, veiculoId, intervalo, ignorarId);
     if (conflitos.length === 0) return [estado];
 
     const [conflito] = conflitos;
@@ -153,6 +159,7 @@ export function gerarPlanosRemanejamento({
         destinoId,
         { saida: conflito.saida, chegada: conflito.chegada },
         profundidade + 1,
+        conflito.id,
       );
 
       estadosAposDestino.forEach((estadoResolvido) => {
